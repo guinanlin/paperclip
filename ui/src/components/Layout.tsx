@@ -28,6 +28,7 @@ import { queryKeys } from "../lib/queryKeys";
 import { cn } from "../lib/utils";
 import { NotFoundPage } from "../pages/NotFound";
 import { Button } from "@/components/ui/button";
+import { SidebarNavItem } from "./SidebarNavItem";
 
 const INSTANCE_SETTINGS_MEMORY_KEY = "paperclip.lastInstanceSettingsPath";
 const DEFAULT_INSTANCE_SETTINGS_PATH = "/instance/settings/heartbeats";
