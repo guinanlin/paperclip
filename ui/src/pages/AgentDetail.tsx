@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useParams, useNavigate, Link, Navigate, useBeforeUnload } from "@/lib/router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { agentsApi, type AgentKey, type ClaudeLoginResult } from "../api/agents";
+import { agentsApi, type AgentKey, type AgentCommandSet, type ClaudeLoginResult } from "../api/agents";
 import { heartbeatsApi } from "../api/heartbeats";
 import { ApiError } from "../api/client";
 import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart } from "../components/ActivityCharts";
@@ -11,6 +11,7 @@ import { usePanel } from "../context/PanelContext";
 import { useSidebar } from "../context/SidebarContext";
 import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
+import { useToast } from "../context/ToastContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { AgentConfigForm } from "../components/AgentConfigForm";
@@ -54,8 +55,11 @@ import {
   ChevronRight,
   ChevronDown,
   ArrowLeft,
+  FilePlus2,
+  Pencil,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { AgentIcon, AgentIconPicker } from "../components/AgentIconPicker";
 import { RunTranscriptView, type TranscriptMode } from "../components/transcript/RunTranscriptView";
 import { isUuidLike, type Agent, type HeartbeatRun, type HeartbeatRunEvent, type AgentRuntimeState, type LiveEvent } from "@paperclipai/shared";
@@ -175,10 +179,11 @@ function scrollToContainerBottom(container: ScrollContainer, behavior: ScrollBeh
   container.scrollTo({ top: container.scrollHeight, behavior });
 }
 
-type AgentDetailView = "dashboard" | "configuration" | "runs";
+type AgentDetailView = "dashboard" | "configuration" | "automation" | "runs";
 
 function parseAgentDetailView(value: string | null): AgentDetailView {
   if (value === "configure" || value === "configuration") return "configuration";
+  if (value === "automation") return "automation";
   if (value === "runs") return value;
   return "dashboard";
 }
@@ -317,7 +322,9 @@ export function AgentDetail() {
         ? "configuration"
         : activeView === "runs"
           ? "runs"
-          : "dashboard";
+          : activeView === "automation"
+            ? "automation"
+            : "dashboard";
     if (routeAgentRef !== canonicalAgentRef || urlTab !== canonicalTab) {
       navigate(`/agents/${canonicalAgentRef}/${canonicalTab}`, { replace: true });
       return;
@@ -414,6 +421,8 @@ export function AgentDetail() {
         crumbs.push({ label: `Run ${urlRunId.slice(0, 8)}` });
       } else if (activeView === "configuration") {
         crumbs.push({ label: "Configuration" });
+      } else if (activeView === "automation") {
+        crumbs.push({ label: "Automation" });
       } else if (activeView === "runs") {
         crumbs.push({ label: "Runs" });
       } else {
@@ -571,6 +580,7 @@ export function AgentDetail() {
             items={[
               { value: "dashboard", label: "Dashboard" },
               { value: "configuration", label: "Configuration" },
+              { value: "automation", label: "Automation" },
               { value: "runs", label: "Runs" },
             ]}
             value={activeView}
@@ -665,6 +675,14 @@ export function AgentDetail() {
           onCancelActionChange={setCancelConfigAction}
           onSavingChange={setConfigSaving}
           updatePermissions={updatePermissions}
+        />
+      )}
+
+      {activeView === "automation" && (
+        <AutomationTab
+          agentId={agent.id}
+          companyId={resolvedCompanyId ?? ""}
+          companyPrefix={companyPrefix ?? null}
         />
       )}
 
@@ -1125,6 +1143,264 @@ function ConfigurationTab({
             </Button>
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---- Automation Tab ---- */
+
+function AutomationTab({
+  agentId,
+  companyId,
+  companyPrefix,
+}: {
+  agentId: string;
+  companyId: string;
+  companyPrefix: string | null;
+}) {
+  const queryClient = useQueryClient();
+  const { pushToast } = useToast();
+  const [adding, setAdding] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [addTitle, setAddTitle] = useState("");
+  const [addBody, setAddBody] = useState("");
+  const [editTitle, setEditTitle] = useState("");
+  const [editBody, setEditBody] = useState("");
+
+  const { data: commandSets, isLoading } = useQuery({
+    queryKey: queryKeys.agents.commandSets(agentId, companyId),
+    queryFn: () => agentsApi.listCommandSets(agentId, companyId),
+    enabled: Boolean(agentId && companyId),
+  });
+
+  const createCommandSet = useMutation({
+    mutationFn: (data: { title: string; body?: string | null }) =>
+      agentsApi.createCommandSet(agentId, data, companyId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.commandSets(agentId, companyId) });
+      setAddTitle("");
+      setAddBody("");
+      setAdding(false);
+    },
+    onError: (err: Error) => {
+      pushToast({ title: "Failed to add", body: err.message, tone: "error" });
+    },
+  });
+
+  const updateCommandSet = useMutation({
+    mutationFn: ({ commandId, data }: { commandId: string; data: { title?: string; body?: string | null } }) =>
+      agentsApi.updateCommandSet(agentId, commandId, data, companyId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.commandSets(agentId, companyId) });
+      setEditingId(null);
+    },
+    onError: (err: Error) => {
+      pushToast({ title: "Failed to update", body: err.message, tone: "error" });
+    },
+  });
+
+  const deleteCommandSet = useMutation({
+    mutationFn: (commandId: string) => agentsApi.deleteCommandSet(agentId, commandId, companyId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.commandSets(agentId, companyId) });
+    },
+    onError: (err: Error) => {
+      pushToast({ title: "Failed to delete", body: err.message, tone: "error" });
+    },
+  });
+
+  const executeCommandSet = useMutation({
+    mutationFn: (commandId: string) => agentsApi.executeCommandSet(agentId, commandId, companyId),
+    onSuccess: (issue) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.agents.commandSets(agentId, companyId) });
+      const identifier = issue.identifier ?? issue.id.slice(0, 8);
+      const issueHref = companyPrefix
+        ? `/${companyPrefix}/issues/${identifier}`
+        : `/issues/${identifier}`;
+      pushToast({
+        title: "Issue created & assigned",
+        body: `${identifier}: ${issue.title}`,
+        tone: "success",
+        action: { label: "View", href: issueHref },
+      });
+    },
+    onError: (err: Error) => {
+      pushToast({ title: "Failed to run", body: err.message, tone: "error" });
+    },
+  });
+
+  const startEdit = (cmd: AgentCommandSet) => {
+    setEditingId(cmd.id);
+    setEditTitle(cmd.title);
+    setEditBody(cmd.body ?? "");
+  };
+
+  const sortedSets = useMemo(
+    () => (commandSets ?? []).slice().sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt)),
+    [commandSets],
+  );
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div className="rounded-lg border border-border bg-card p-6">
+        <h3 className="text-sm font-medium mb-2">Command set</h3>
+        <p className="text-sm text-muted-foreground mb-4">
+          Preset commands. Run one to create an issue and assign it to this agent. Board only.
+        </p>
+
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : (
+          <div className="space-y-3">
+            {sortedSets.map((cmd) => (
+              <div
+                key={cmd.id}
+                className="rounded-lg border border-border bg-muted/30 p-4 space-y-3"
+              >
+                {editingId === cmd.id ? (
+                  <>
+                    <Input
+                      placeholder="Title (required)"
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      className="font-medium"
+                    />
+                    <Textarea
+                      placeholder="Description (optional, Markdown)"
+                      value={editBody}
+                      onChange={(e) => setEditBody(e.target.value)}
+                      rows={3}
+                      className="resize-y min-h-[4rem]"
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        onClick={() =>
+                          updateCommandSet.mutate({
+                            commandId: cmd.id,
+                            data: { title: editTitle.trim() || cmd.title, body: editBody || null },
+                          })
+                        }
+                        disabled={!editTitle.trim() || updateCommandSet.isPending}
+                      >
+                        {updateCommandSet.isPending ? "Saving…" : "Save"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => { setEditingId(null); setEditTitle(""); setEditBody(""); }}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-sm">{cmd.title}</p>
+                        {cmd.body && (
+                          <div className="mt-1 text-xs text-muted-foreground line-clamp-2">
+                            <MarkdownBody>{cmd.body}</MarkdownBody>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <Button
+                          size="sm"
+                          variant="default"
+                          className="gap-1"
+                          onClick={() => executeCommandSet.mutate(cmd.id)}
+                          disabled={executeCommandSet.isPending}
+                        >
+                          {executeCommandSet.isPending ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <FilePlus2 className="h-3.5 w-3.5" />
+                          )}
+                          Create issue & assign
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 w-8 p-0"
+                          onClick={() => startEdit(cmd)}
+                          title="Edit"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                          onClick={() => {
+                            if (window.confirm(`Delete “${cmd.title}”?`)) {
+                              deleteCommandSet.mutate(cmd.id);
+                            }
+                          }}
+                          disabled={deleteCommandSet.isPending}
+                          title="Delete"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            ))}
+
+            {adding ? (
+              <div className="rounded-lg border border-border bg-muted/30 p-4 space-y-3">
+                <Input
+                  placeholder="Title (required)"
+                  value={addTitle}
+                  onChange={(e) => setAddTitle(e.target.value)}
+                  className="font-medium"
+                />
+                <Textarea
+                  placeholder="Description (optional, Markdown)"
+                  value={addBody}
+                  onChange={(e) => setAddBody(e.target.value)}
+                  rows={3}
+                  className="resize-y min-h-[4rem]"
+                />
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      createCommandSet.mutate({
+                        title: addTitle.trim(),
+                        body: addBody.trim() || null,
+                      })
+                    }
+                    disabled={!addTitle.trim() || createCommandSet.isPending}
+                  >
+                    {createCommandSet.isPending ? "Adding…" : "Add"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => { setAdding(false); setAddTitle(""); setAddBody(""); }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1"
+                onClick={() => setAdding(true)}
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add command
+              </Button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

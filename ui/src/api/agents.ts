@@ -7,6 +7,7 @@ import type {
   HeartbeatRun,
   Approval,
   AgentConfigRevision,
+  Issue,
 } from "@paperclipai/shared";
 import { isUuidLike, normalizeAgentUrlKey } from "@paperclipai/shared";
 import { ApiError, api } from "./client";
@@ -16,6 +17,17 @@ export interface AgentKey {
   name: string;
   createdAt: Date;
   revokedAt: Date | null;
+}
+
+export interface AgentCommandSet {
+  id: string;
+  agentId: string;
+  companyId: string;
+  title: string;
+  body: string | null;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface AdapterModel {
@@ -111,6 +123,32 @@ export const agentsApi = {
     api.post<AgentKeyCreated>(agentPath(id, companyId, "/keys"), { name }),
   revokeKey: (agentId: string, keyId: string, companyId?: string) =>
     api.delete<{ ok: true }>(agentPath(agentId, companyId, `/keys/${encodeURIComponent(keyId)}`)),
+  listCommandSets: (agentId: string, companyId?: string) =>
+    api.get<AgentCommandSet[]>(agentPath(agentId, companyId, "/command-sets")),
+  createCommandSet: (
+    agentId: string,
+    data: { title: string; body?: string | null; sortOrder?: number },
+    companyId?: string,
+  ) => api.post<AgentCommandSet>(agentPath(agentId, companyId, "/command-sets"), data),
+  updateCommandSet: (
+    agentId: string,
+    commandId: string,
+    data: { title?: string; body?: string | null; sortOrder?: number },
+    companyId?: string,
+  ) =>
+    api.patch<AgentCommandSet>(
+      agentPath(agentId, companyId, `/command-sets/${encodeURIComponent(commandId)}`),
+      data,
+    ),
+  deleteCommandSet: (agentId: string, commandId: string, companyId?: string) =>
+    api.delete<{ ok: true }>(
+      agentPath(agentId, companyId, `/command-sets/${encodeURIComponent(commandId)}`),
+    ),
+  executeCommandSet: (agentId: string, commandId: string, companyId?: string) =>
+    api.post<Issue>(
+      agentPath(agentId, companyId, `/command-sets/${encodeURIComponent(commandId)}/execute`),
+      {},
+    ),
   runtimeState: (id: string, companyId?: string) =>
     api.get<AgentRuntimeState>(agentPath(id, companyId, "/runtime-state")),
   taskSessions: (id: string, companyId?: string) =>

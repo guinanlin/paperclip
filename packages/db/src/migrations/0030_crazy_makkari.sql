@@ -1,0 +1,1 @@
+ALTER TABLE "issues" ADD COLUMN "expected_output_type" text;

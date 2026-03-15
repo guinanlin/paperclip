@@ -803,6 +803,7 @@ export interface PluginIssuesClient {
     description?: string;
     priority?: Issue["priority"];
     assigneeAgentId?: string;
+    expectedOutputType?: "text" | "document" | "code" | null;
   }): Promise<Issue>;
   update(
     issueId: string,

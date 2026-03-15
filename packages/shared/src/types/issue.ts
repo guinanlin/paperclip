@@ -118,6 +118,7 @@ export interface Issue {
   billingCode: string | null;
   assigneeAdapterOverrides: IssueAssigneeAdapterOverrides | null;
   executionWorkspaceSettings: IssueExecutionWorkspaceSettings | null;
+  expectedOutputType: "text" | "document" | "code" | null;
   startedAt: Date | null;
   completedAt: Date | null;
   cancelledAt: Date | null;
@@ -165,4 +166,15 @@ export interface IssueAttachment {
   createdAt: Date;
   updatedAt: Date;
   contentPath: string;
+}
+
+/** Issue creation shortcut: reusable template for the New Issue dialog (title + optional description). */
+export interface IssueCreationShortcut {
+  id: string;
+  companyId: string;
+  title: string;
+  description: string | null;
+  sortOrder: number;
+  createdAt: Date;
+  updatedAt: Date;
 }

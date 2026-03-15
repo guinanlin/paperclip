@@ -15,10 +15,13 @@ import {
   type InstanceSchedulerHeartbeatAgent,
   updateAgentPermissionsSchema,
   updateAgentInstructionsPathSchema,
+  createAgentCommandSetSchema,
+  updateAgentCommandSetSchema,
   wakeAgentSchema,
   updateAgentSchema,
 } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
+import { logger } from "../middleware/logger.js";
 import {
   agentService,
   accessService,
@@ -59,6 +62,7 @@ export function agentRoutes(db: Db) {
   const approvalsSvc = approvalService(db);
   const heartbeat = heartbeatService(db);
   const issueApprovalsSvc = issueApprovalService(db);
+  const issueSvc = issueService(db);
   const secretsSvc = secretService(db);
   const strictSecretsMode = process.env.PAPERCLIP_SECRETS_STRICT_MODE === "true";
 
@@ -1276,6 +1280,172 @@ export function agentRoutes(db: Db) {
       return;
     }
     res.json({ ok: true });
+  });
+
+  /* ---- Agent command sets (automation: preset instructions → create issue + assign) ---- */
+  router.get("/agents/:id/command-sets", async (req, res) => {
+    assertBoard(req);
+    const id = req.params.id as string;
+    const agent = await svc.getById(id);
+    if (!agent) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    assertCompanyAccess(req, agent.companyId);
+    const list = await svc.listCommandSets(id);
+    res.json(list);
+  });
+
+  router.post("/agents/:id/command-sets", validate(createAgentCommandSetSchema), async (req, res) => {
+    assertBoard(req);
+    const id = req.params.id as string;
+    const agent = await svc.getById(id);
+    if (!agent) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    assertCompanyAccess(req, agent.companyId);
+    const created = await svc.createCommandSet(id, req.body);
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId: agent.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "agent.command_set_created",
+      entityType: "agent_command_set",
+      entityId: created.id,
+      details: { agentId: id, title: created.title },
+    });
+    res.status(201).json(created);
+  });
+
+  router.patch("/agents/:id/command-sets/:commandId", validate(updateAgentCommandSetSchema), async (req, res) => {
+    assertBoard(req);
+    const id = req.params.id as string;
+    const commandId = req.params.commandId as string;
+    const agent = await svc.getById(id);
+    if (!agent) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    assertCompanyAccess(req, agent.companyId);
+    const updated = await svc.updateCommandSet(id, commandId, req.body);
+    if (!updated) {
+      res.status(404).json({ error: "Command set not found" });
+      return;
+    }
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId: agent.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "agent.command_set_updated",
+      entityType: "agent_command_set",
+      entityId: updated.id,
+      details: { agentId: id, title: updated.title },
+    });
+    res.json(updated);
+  });
+
+  router.delete("/agents/:id/command-sets/:commandId", async (req, res) => {
+    assertBoard(req);
+    const id = req.params.id as string;
+    const commandId = req.params.commandId as string;
+    const agent = await svc.getById(id);
+    if (!agent) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    assertCompanyAccess(req, agent.companyId);
+    const cmd = await svc.getCommandSet(id, commandId);
+    if (!cmd) {
+      res.status(404).json({ error: "Command set not found" });
+      return;
+    }
+    const deleted = await svc.deleteCommandSet(id, commandId);
+    if (!deleted) {
+      res.status(404).json({ error: "Command set not found" });
+      return;
+    }
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId: agent.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "agent.command_set_deleted",
+      entityType: "agent_command_set",
+      entityId: commandId,
+      details: { agentId: id, title: cmd.title },
+    });
+    res.json({ ok: true });
+  });
+
+  router.post("/agents/:id/command-sets/:commandId/execute", async (req, res) => {
+    assertBoard(req);
+    const id = req.params.id as string;
+    const commandId = req.params.commandId as string;
+    const agent = await svc.getById(id);
+    if (!agent) {
+      res.status(404).json({ error: "Agent not found" });
+      return;
+    }
+    assertCompanyAccess(req, agent.companyId);
+    const cmd = await svc.getCommandSet(id, commandId);
+    if (!cmd) {
+      res.status(404).json({ error: "Command set not found" });
+      return;
+    }
+    const actor = getActorInfo(req);
+    const issue = await issueSvc.create(agent.companyId, {
+      title: cmd.title,
+      description: cmd.body ?? null,
+      status: "backlog",
+      assigneeAgentId: agent.id,
+      createdByAgentId: actor.agentId,
+      createdByUserId: actor.actorType === "user" ? actor.actorId : null,
+    });
+    await logActivity(db, {
+      companyId: agent.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "issue.created",
+      entityType: "issue",
+      entityId: issue.id,
+      details: { title: issue.title, identifier: issue.identifier, source: "automation.command_set", commandSetId: commandId },
+    });
+    await logActivity(db, {
+      companyId: agent.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      runId: actor.runId,
+      action: "agent.command_set_executed",
+      entityType: "agent_command_set",
+      entityId: commandId,
+      details: { agentId: id, issueId: issue.id, issueIdentifier: issue.identifier },
+    });
+    void heartbeat
+      .wakeup(agent.id, {
+        source: "assignment",
+        triggerDetail: "system",
+        reason: "issue_assigned",
+        payload: { issueId: issue.id, mutation: "create" },
+        requestedByActorType: actor.actorType,
+        requestedByActorId: actor.actorType === "agent" ? actor.agentId : actor.actorId,
+        contextSnapshot: { issueId: issue.id, source: "automation.command_set" },
+      })
+      .catch((err: unknown) =>
+        logger.warn({ err, issueId: issue.id }, "failed to wake assignee on command-set execute"),
+      );
+    res.status(201).json(issue);
   });
 
   router.post("/agents/:id/wakeup", validate(wakeAgentSchema), async (req, res) => {

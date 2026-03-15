@@ -373,6 +373,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
           billingCode: null,
           assigneeAdapterOverrides: null,
           executionWorkspaceSettings: null,
+          expectedOutputType: input.expectedOutputType ?? null,
           startedAt: null,
           completedAt: null,
           cancelledAt: null,

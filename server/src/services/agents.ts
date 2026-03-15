@@ -1,10 +1,11 @@
 import { createHash, randomBytes } from "node:crypto";
-import { and, desc, eq, inArray, ne } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   agents,
   agentConfigRevisions,
   agentApiKeys,
+  agentCommandSets,
   agentRuntimeState,
   agentTaskSessions,
   agentWakeupRequests,
@@ -550,6 +551,75 @@ export function agentService(db: Db) {
         .where(eq(agentApiKeys.id, keyId))
         .returning();
       return rows[0] ?? null;
+    },
+
+    listCommandSets: async (agentId: string) => {
+      const agent = await getById(agentId);
+      if (!agent) return [];
+      return db
+        .select()
+        .from(agentCommandSets)
+        .where(eq(agentCommandSets.agentId, agentId))
+        .orderBy(asc(agentCommandSets.sortOrder), asc(agentCommandSets.createdAt));
+    },
+
+    getCommandSet: async (agentId: string, commandId: string) => {
+      const rows = await db
+        .select()
+        .from(agentCommandSets)
+        .where(and(eq(agentCommandSets.agentId, agentId), eq(agentCommandSets.id, commandId)));
+      return rows[0] ?? null;
+    },
+
+    createCommandSet: async (
+      agentId: string,
+      data: { title: string; body?: string | null; sortOrder?: number },
+    ) => {
+      const agent = await getById(agentId);
+      if (!agent) throw notFound("Agent not found");
+      const [row] = await db
+        .insert(agentCommandSets)
+        .values({
+          agentId,
+          companyId: agent.companyId,
+          title: data.title,
+          body: data.body ?? null,
+          sortOrder: data.sortOrder ?? 0,
+        })
+        .returning();
+      return row;
+    },
+
+    updateCommandSet: async (
+      agentId: string,
+      commandId: string,
+      data: { title?: string; body?: string | null; sortOrder?: number },
+    ) => {
+      const existing = await db
+        .select()
+        .from(agentCommandSets)
+        .where(and(eq(agentCommandSets.agentId, agentId), eq(agentCommandSets.id, commandId)))
+        .then((rows) => rows[0] ?? null);
+      if (!existing) return null;
+      const [row] = await db
+        .update(agentCommandSets)
+        .set({
+          ...(data.title !== undefined && { title: data.title }),
+          ...(data.body !== undefined && { body: data.body }),
+          ...(data.sortOrder !== undefined && { sortOrder: data.sortOrder }),
+          updatedAt: new Date(),
+        })
+        .where(eq(agentCommandSets.id, commandId))
+        .returning();
+      return row ?? null;
+    },
+
+    deleteCommandSet: async (agentId: string, commandId: string) => {
+      const rows = await db
+        .delete(agentCommandSets)
+        .where(and(eq(agentCommandSets.agentId, agentId), eq(agentCommandSets.id, commandId)))
+        .returning({ id: agentCommandSets.id });
+      return rows.length > 0;
     },
 
     orgForCompany: async (companyId: string) => {

@@ -7,6 +7,7 @@ import { projectsApi } from "../api/projects";
 import { agentsApi } from "../api/agents";
 import { authApi } from "../api/auth";
 import { assetsApi } from "../api/assets";
+import { issueCreationShortcutsApi } from "../api/issue-creation-shortcuts";
 import { queryKeys } from "../lib/queryKeys";
 import { useProjectOrder } from "../hooks/useProjectOrder";
 import { getRecentAssigneeIds, sortAgentsByRecency, trackRecentAssignee } from "../lib/recent-assignees";
@@ -43,6 +44,10 @@ import {
   FileText,
   Loader2,
   X,
+  MessageCircle,
+  Code,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import { extractProviderIdWithFallback } from "../lib/model-utils";
@@ -54,8 +59,6 @@ import { InlineEntitySelector, type InlineEntityOption } from "./InlineEntitySel
 const DRAFT_KEY = "paperclip:issue-draft";
 const DEBOUNCE_MS = 800;
 
-/** Quick title templates shown above the issue title field for one-click fill. */
-const QUICK_TITLE_TEMPLATES = ["员工招聘", "产品定义", "需求评审", "新需求开发", "Bug 修复", "文档编写"];
 // TODO(issue-worktree-support): re-enable this UI once the workflow is ready to ship.
 const SHOW_EXPERIMENTAL_ISSUE_WORKTREE_UI = false;
 
@@ -81,6 +84,7 @@ interface IssueDraft {
   assigneeThinkingEffort: string;
   assigneeChrome: boolean;
   useIsolatedExecutionWorkspace: boolean;
+  expectedOutputType?: "text" | "document" | "code";
 }
 
 type StagedIssueFile = {
@@ -239,6 +243,12 @@ const priorities = [
   { value: "low", label: "Low", icon: ArrowDown, color: priorityColor.low ?? priorityColorDefault },
 ];
 
+const expectedOutputTypes = [
+  { value: "text" as const, label: "Ask", icon: MessageCircle },
+  { value: "document" as const, label: "Document", icon: FileText },
+  { value: "code" as const, label: "Code", icon: Code },
+];
+
 export function NewIssueDialog() {
   const { newIssueOpen, newIssueDefaults, closeNewIssue } = useDialog();
   const { companies, selectedCompanyId, selectedCompany } = useCompany();
@@ -255,10 +265,14 @@ export function NewIssueDialog() {
   const [assigneeThinkingEffort, setAssigneeThinkingEffort] = useState("");
   const [assigneeChrome, setAssigneeChrome] = useState(false);
   const [useIsolatedExecutionWorkspace, setUseIsolatedExecutionWorkspace] = useState(false);
+  const [expectedOutputType, setExpectedOutputType] = useState<"text" | "document" | "code">("text");
   const [expanded, setExpanded] = useState(false);
   const [dialogCompanyId, setDialogCompanyId] = useState<string | null>(null);
   const [stagedFiles, setStagedFiles] = useState<StagedIssueFile[]>([]);
   const [isFileDragOver, setIsFileDragOver] = useState(false);
+  const [manageShortcutsOpen, setManageShortcutsOpen] = useState(false);
+  const [editingShortcutId, setEditingShortcutId] = useState<string | null>(null);
+  const [editShortcutForm, setEditShortcutForm] = useState({ title: "", description: "" });
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const executionWorkspaceDefaultProjectId = useRef<string | null>(null);
 
@@ -268,6 +282,7 @@ export function NewIssueDialog() {
   // Popover states
   const [statusOpen, setStatusOpen] = useState(false);
   const [priorityOpen, setPriorityOpen] = useState(false);
+  const [expectedOutputTypeOpen, setExpectedOutputTypeOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const [companyOpen, setCompanyOpen] = useState(false);
   const descriptionEditorRef = useRef<MarkdownEditorRef>(null);
@@ -284,6 +299,11 @@ export function NewIssueDialog() {
   const { data: projects } = useQuery({
     queryKey: queryKeys.projects.list(effectiveCompanyId!),
     queryFn: () => projectsApi.list(effectiveCompanyId!),
+    enabled: !!effectiveCompanyId && newIssueOpen,
+  });
+  const { data: shortcuts = [] } = useQuery({
+    queryKey: queryKeys.issueCreationShortcuts.list(effectiveCompanyId!),
+    queryFn: () => issueCreationShortcutsApi.list(effectiveCompanyId!),
     enabled: !!effectiveCompanyId && newIssueOpen,
   });
   const { data: session } = useQuery({
@@ -395,6 +415,38 @@ export function NewIssueDialog() {
     },
   });
 
+  const createShortcut = useMutation({
+    mutationFn: (data: { title: string; description?: string }) => {
+      if (!effectiveCompanyId) throw new Error("No company selected");
+      return issueCreationShortcutsApi.create(effectiveCompanyId, {
+        title: data.title.trim(),
+        description: data.description?.trim() || undefined,
+        sortOrder: 0,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.issueCreationShortcuts.list(effectiveCompanyId!) });
+    },
+  });
+
+  const updateShortcut = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: { title: string; description?: string } }) =>
+      issueCreationShortcutsApi.update(id, {
+        title: data.title.trim(),
+        description: data.description?.trim() ?? null,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.issueCreationShortcuts.list(effectiveCompanyId!) });
+    },
+  });
+
+  const removeShortcut = useMutation({
+    mutationFn: (id: string) => issueCreationShortcutsApi.remove(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.issueCreationShortcuts.list(effectiveCompanyId!) });
+    },
+  });
+
   // Debounced draft saving
   const scheduleSave = useCallback(
     (draft: IssueDraft) => {
@@ -420,6 +472,7 @@ export function NewIssueDialog() {
       assigneeThinkingEffort,
       assigneeChrome,
       useIsolatedExecutionWorkspace,
+      expectedOutputType,
     });
   }, [
     title,
@@ -432,6 +485,7 @@ export function NewIssueDialog() {
     assigneeThinkingEffort,
     assigneeChrome,
     useIsolatedExecutionWorkspace,
+    expectedOutputType,
     newIssueOpen,
     scheduleSave,
   ]);
@@ -454,6 +508,7 @@ export function NewIssueDialog() {
       setAssigneeThinkingEffort("");
       setAssigneeChrome(false);
       setUseIsolatedExecutionWorkspace(false);
+      setExpectedOutputType(newIssueDefaults.expectedOutputType ?? "text");
     } else if (draft && draft.title.trim()) {
       setTitle(draft.title);
       setDescription(draft.description);
@@ -469,6 +524,7 @@ export function NewIssueDialog() {
       setAssigneeThinkingEffort(draft.assigneeThinkingEffort ?? "");
       setAssigneeChrome(draft.assigneeChrome ?? false);
       setUseIsolatedExecutionWorkspace(draft.useIsolatedExecutionWorkspace ?? false);
+      setExpectedOutputType(draft.expectedOutputType ?? "text");
     } else {
       setStatus(newIssueDefaults.status ?? "todo");
       setPriority(newIssueDefaults.priority ?? "");
@@ -478,6 +534,7 @@ export function NewIssueDialog() {
       setAssigneeThinkingEffort("");
       setAssigneeChrome(false);
       setUseIsolatedExecutionWorkspace(false);
+      setExpectedOutputType(newIssueDefaults.expectedOutputType ?? "text");
     }
   }, [newIssueOpen, newIssueDefaults]);
 
@@ -520,6 +577,7 @@ export function NewIssueDialog() {
     setAssigneeThinkingEffort("");
     setAssigneeChrome(false);
     setUseIsolatedExecutionWorkspace(false);
+    setExpectedOutputType("text");
     setExpanded(false);
     setDialogCompanyId(null);
     setStagedFiles([]);
@@ -569,6 +627,7 @@ export function NewIssueDialog() {
       description: description.trim() || undefined,
       status,
       priority: priority || "medium",
+      expectedOutputType: expectedOutputType || "text",
       ...(selectedAssigneeAgentId ? { assigneeAgentId: selectedAssigneeAgentId } : {}),
       ...(selectedAssigneeUserId ? { assigneeUserId: selectedAssigneeUserId } : {}),
       ...(projectId ? { projectId } : {}),
@@ -747,6 +806,7 @@ export function NewIssueDialog() {
   );
 
   return (
+    <>
     <Dialog
       open={newIssueOpen}
       onOpenChange={(open) => {
@@ -868,20 +928,56 @@ export function NewIssueDialog() {
 
         {/* Title */}
         <div className="px-4 pt-4 pb-2 shrink-0">
-          <div className="flex flex-wrap gap-1.5 mb-2">
-            {QUICK_TITLE_TEMPLATES.map((label) => (
+          <div className="flex flex-wrap items-center gap-1.5 mb-2">
+            {shortcuts.map((shortcut) => (
               <button
-                key={label}
+                key={shortcut.id}
                 type="button"
                 className={cn(
                   "px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
                   "text-muted-foreground hover:text-foreground hover:bg-muted border border-transparent hover:border-border",
                 )}
-                onClick={() => setTitle(label)}
+                onClick={() => {
+                  setTitle(shortcut.title);
+                  setDescription(shortcut.description ?? "");
+                }}
               >
-                {label}
+                {shortcut.title}
               </button>
             ))}
+            {title.trim() ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs text-muted-foreground"
+                disabled={createShortcut.isPending}
+                onClick={() => {
+                  createShortcut.mutate(
+                    { title, description: description || undefined },
+                    {
+                      onSuccess: () => {
+                        pushToast({ title: "已保存为快捷方式", tone: "success" });
+                      },
+                      onError: () => {
+                        pushToast({ title: "保存失败", body: createShortcut.error?.message, tone: "error" });
+                      },
+                    },
+                  );
+                }}
+              >
+                {createShortcut.isPending ? "保存中…" : "保存为快捷方式"}
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-xs text-muted-foreground"
+              onClick={() => setManageShortcutsOpen(true)}
+            >
+              Manage shortcuts
+            </Button>
           </div>
           <textarea
             className="w-full text-lg font-semibold bg-transparent outline-none resize-none overflow-hidden placeholder:text-muted-foreground/50"
@@ -1275,6 +1371,46 @@ export function NewIssueDialog() {
             </PopoverContent>
           </Popover>
 
+          {/* Output type chip */}
+          <Popover open={expectedOutputTypeOpen} onOpenChange={setExpectedOutputTypeOpen}>
+            <PopoverTrigger asChild>
+              <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors">
+                {(() => {
+                  const current = expectedOutputTypes.find((o) => o.value === expectedOutputType);
+                  return current ? (
+                    <>
+                      <current.icon className="h-3 w-3 text-muted-foreground" />
+                      {current.label}
+                    </>
+                  ) : (
+                    <>
+                      <MessageCircle className="h-3 w-3 text-muted-foreground" />
+                      Output
+                    </>
+                  );
+                })()}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-36 p-1" align="start">
+              {expectedOutputTypes.map((o) => (
+                <button
+                  key={o.value}
+                  className={cn(
+                    "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                    o.value === expectedOutputType && "bg-accent",
+                  )}
+                  onClick={() => {
+                    setExpectedOutputType(o.value);
+                    setExpectedOutputTypeOpen(false);
+                  }}
+                >
+                  <o.icon className="h-3 w-3 text-muted-foreground" />
+                  {o.label}
+                </button>
+              ))}
+            </PopoverContent>
+          </Popover>
+
           {/* Labels chip (placeholder) */}
           <button className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs hover:bg-accent/50 transition-colors text-muted-foreground">
             <Tag className="h-3 w-3" />
@@ -1356,5 +1492,114 @@ export function NewIssueDialog() {
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* Manage issue creation shortcuts */}
+    <Dialog open={manageShortcutsOpen} onOpenChange={setManageShortcutsOpen}>
+      <DialogContent className="max-w-md max-h-[80vh] flex flex-col">
+        <div className="font-semibold">Manage shortcuts</div>
+        <p className="text-sm text-muted-foreground">
+          在新建 Issue 时点击快捷方式可填充标题与描述。在弹窗中填写后点击「保存为快捷方式」可添加。
+        </p>
+        <div className="flex-1 overflow-y-auto space-y-2 mt-2">
+          {shortcuts.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4">暂无快捷方式，在左侧填写标题后点击「保存为快捷方式」添加。</p>
+          ) : (
+            shortcuts.map((shortcut) =>
+              editingShortcutId === shortcut.id ? (
+                <div key={shortcut.id} className="flex flex-col gap-2 p-2 rounded-lg border border-border bg-muted/30">
+                  <input
+                    className="w-full px-2 py-1.5 text-sm rounded border border-border bg-background"
+                    value={editShortcutForm.title}
+                    onChange={(e) => setEditShortcutForm((f) => ({ ...f, title: e.target.value }))}
+                    placeholder="标题"
+                  />
+                  <textarea
+                    className="w-full px-2 py-1.5 text-sm rounded border border-border bg-background min-h-[60px] resize-y"
+                    value={editShortcutForm.description}
+                    onChange={(e) => setEditShortcutForm((f) => ({ ...f, description: e.target.value }))}
+                    placeholder="描述（可选）"
+                  />
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      disabled={!editShortcutForm.title.trim() || updateShortcut.isPending}
+                      onClick={() => {
+                        updateShortcut.mutate(
+                          {
+                            id: shortcut.id,
+                            data: {
+                              title: editShortcutForm.title,
+                              description: editShortcutForm.description || undefined,
+                            },
+                          },
+                          {
+                            onSuccess: () => {
+                              setEditingShortcutId(null);
+                              setEditShortcutForm({ title: "", description: "" });
+                            },
+                          },
+                        );
+                      }}
+                    >
+                      {updateShortcut.isPending ? "保存中…" : "保存"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setEditingShortcutId(null);
+                        setEditShortcutForm({ title: "", description: "" });
+                      }}
+                    >
+                      取消
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div
+                  key={shortcut.id}
+                  className="flex items-center gap-2 p-2 rounded-lg border border-border hover:bg-muted/30 group"
+                >
+                  <span className="flex-1 min-w-0 truncate text-sm" title={shortcut.title}>
+                    {shortcut.title}
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    className="opacity-0 group-hover:opacity-100 shrink-0"
+                    onClick={() => {
+                      setEditingShortcutId(shortcut.id);
+                      setEditShortcutForm({
+                        title: shortcut.title,
+                        description: shortcut.description ?? "",
+                      });
+                    }}
+                    aria-label="编辑"
+                  >
+                    <Pencil className="h-3 w-3" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    className="opacity-0 group-hover:opacity-100 shrink-0 text-destructive hover:text-destructive"
+                    onClick={() => {
+                      if (window.confirm(`确定删除快捷方式「${shortcut.title}」？`)) {
+                        removeShortcut.mutate(shortcut.id);
+                      }
+                    }}
+                    aria-label="删除"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+              ),
+            )
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  </>
   );
 }

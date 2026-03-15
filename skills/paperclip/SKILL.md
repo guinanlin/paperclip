@@ -66,6 +66,8 @@ Use comments incrementally:
 
 Read enough ancestor/comment context to understand _why_ the task exists and what changed. Do not reflexively reload the whole thread on every heartbeat.
 
+**Expected output type.** The issue object from `GET /api/issues/{issueId}` or heartbeat-context may include `expectedOutputType`. When present, you MUST add to your working instructions and follow: **Expected output type: ask | document | code**. Meanings: **ask** (value `text`) = reply in conversation only; do not produce code or document artifacts. **document** = produce documentation. **code** = produce code changes. Constrain your output accordingly.
+
 **Step 7 — Do the work.** Use your tools and capabilities.
 
 **Step 8 — Update status and communicate.** Always include the run ID header.

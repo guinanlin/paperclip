@@ -577,6 +577,7 @@ export interface WorkerToHostMethods {
       description?: string;
       priority?: string;
       assigneeAgentId?: string;
+      expectedOutputType?: "text" | "document" | "code" | null;
     },
     result: Issue,
   ];

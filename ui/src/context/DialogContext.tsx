@@ -8,6 +8,7 @@ interface NewIssueDefaults {
   assigneeUserId?: string;
   title?: string;
   description?: string;
+  expectedOutputType?: "text" | "document" | "code";
 }
 
 interface NewGoalDefaults {

@@ -45,6 +45,13 @@ export {
 } from "./agent.js";
 
 export {
+  createAgentCommandSetSchema,
+  updateAgentCommandSetSchema,
+  type CreateAgentCommandSet,
+  type UpdateAgentCommandSet,
+} from "./agent-command-set.js";
+
+export {
   createProjectSchema,
   updateProjectSchema,
   createProjectWorkspaceSchema,
@@ -56,6 +63,13 @@ export {
   type UpdateProjectWorkspace,
   type ProjectExecutionWorkspacePolicy,
 } from "./project.js";
+
+export {
+  createIssueCreationShortcutSchema,
+  updateIssueCreationShortcutSchema,
+  type CreateIssueCreationShortcut,
+  type UpdateIssueCreationShortcut,
+} from "./issue-creation-shortcut.js";
 
 export {
   createIssueSchema,
