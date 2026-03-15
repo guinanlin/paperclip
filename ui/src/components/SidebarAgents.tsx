@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { NavLink, useLocation } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronRight, Plus } from "lucide-react";
+import { ChevronRight, List, Plus } from "lucide-react";
 import { useCompany } from "../context/CompanyContext";
 import { useDialog } from "../context/DialogContext";
 import { useSidebar } from "../context/SidebarContext";
@@ -36,6 +36,19 @@ function sortByHierarchy(agents: Agent[]): Agent[] {
     if (children) queue.push(...children);
   }
   return sorted;
+}
+
+/** Sidebar 只展示顶层（CEO/roots）及其直接下属，其余在 Agents 列表页查看。 */
+function sidebarAgentList(agents: Agent[]): Agent[] {
+  const byId = new Map(agents.map((a) => [a.id, a]));
+  const roots = agents.filter((a) => !a.reportsTo || !byId.has(a.reportsTo));
+  const rootIds = new Set(roots.map((a) => a.id));
+  const directReports = agents.filter(
+    (a) => a.reportsTo && rootIds.has(a.reportsTo)
+  );
+  const sorted = sortByHierarchy(agents);
+  const allowedIds = new Set([...roots, ...directReports].map((a) => a.id));
+  return sorted.filter((a) => allowedIds.has(a.id));
 }
 
 export function SidebarAgents() {
@@ -73,13 +86,26 @@ export function SidebarAgents() {
     return sortByHierarchy(filtered);
   }, [agents]);
 
+  /** 侧栏仅展示：顶层 + 直接下属，便于聚焦 CEO 与下一级；全部列表见 Agents 页 */
+  const sidebarAgents = useMemo(
+    () => sidebarAgentList(visibleAgents),
+    [visibleAgents]
+  );
+
   const agentMatch = location.pathname.match(/^\/(?:[^/]+\/)?agents\/([^/]+)/);
   const activeAgentId = agentMatch?.[1] ?? null;
+  const pathParts = location.pathname.replace(/\/$/, "").split("/");
+  const agentsSegment = pathParts.indexOf("agents");
+  const nextSegment = pathParts[agentsSegment + 1];
+  const isAgentsListPage =
+    agentsSegment >= 0 &&
+    (nextSegment === undefined ||
+      ["all", "active", "paused", "error"].includes(nextSegment));
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
       <div className="group">
-        <div className="flex items-center px-3 py-1.5">
+        <div className="flex items-center px-2 py-1">
           <CollapsibleTrigger className="flex items-center gap-1 flex-1 min-w-0">
             <ChevronRight
               className={cn(
@@ -105,8 +131,24 @@ export function SidebarAgents() {
       </div>
 
       <CollapsibleContent>
-        <div className="flex flex-col gap-0.5 mt-0.5">
-          {visibleAgents.map((agent: Agent) => {
+        <div className="flex flex-col gap-0.5">
+          <NavLink
+            to="/agents"
+            end={false}
+            onClick={() => {
+              if (isMobile) setSidebarOpen(false);
+            }}
+            className={cn(
+              "flex items-center gap-2 px-2 py-1 text-[12px] font-medium transition-colors rounded-md",
+              isAgentsListPage
+                ? "bg-accent text-foreground"
+                : "text-foreground/80 hover:bg-accent/50 hover:text-foreground"
+            )}
+          >
+            <List className="shrink-0 h-3.5 w-3.5 text-muted-foreground" />
+            <span className="flex-1 truncate">Agents</span>
+          </NavLink>
+          {sidebarAgents.map((agent: Agent) => {
             const runCount = liveCountByAgent.get(agent.id) ?? 0;
             return (
               <NavLink
@@ -116,7 +158,7 @@ export function SidebarAgents() {
                   if (isMobile) setSidebarOpen(false);
                 }}
                 className={cn(
-                  "flex items-center gap-2.5 px-3 py-1.5 text-[13px] font-medium transition-colors",
+                  "flex items-center gap-2 px-2 py-1 text-[12px] font-medium transition-colors rounded-md",
                   activeAgentId === agentRouteRef(agent)
                     ? "bg-accent text-foreground"
                     : "text-foreground/80 hover:bg-accent/50 hover:text-foreground"
@@ -130,7 +172,7 @@ export function SidebarAgents() {
                       <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75" />
                       <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500" />
                     </span>
-                    <span className="text-[11px] font-medium text-blue-600 dark:text-blue-400">
+                    <span className="text-[10px] font-medium text-blue-600 dark:text-blue-400">
                       {runCount} live
                     </span>
                   </span>

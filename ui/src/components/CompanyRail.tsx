@@ -111,10 +111,10 @@ function SortableCompanyItem({
             {/* Selection indicator pill */}
             <div
               className={cn(
-                "absolute left-[-14px] w-1 rounded-r-full bg-foreground transition-[height] duration-150",
+                "absolute left-[-6px] w-0.5 rounded-r-full bg-foreground transition-[height] duration-150",
                 isSelected
-                  ? "h-5"
-                  : "h-0 group-hover:h-2"
+                  ? "h-3"
+                  : "h-0 group-hover:h-1.5"
               )}
             />
             <div
@@ -124,22 +124,23 @@ function SortableCompanyItem({
                 companyName={company.name}
                 brandColor={company.brandColor}
                 className={cn(
+                  "!w-[18px] !h-[18px] !text-[10px]",
                   isSelected
-                    ? "rounded-[14px]"
-                    : "rounded-[22px] group-hover:rounded-[14px]",
+                    ? "rounded-[5px]"
+                    : "rounded-[6px] group-hover:rounded-[5px]",
                   isDragging && "shadow-lg",
                 )}
               />
               {hasLiveAgents && (
                 <span className="pointer-events-none absolute -right-0.5 -top-0.5 z-10">
-                  <span className="relative flex h-2.5 w-2.5">
+                  <span className="relative flex h-1.5 w-1.5">
                     <span className="absolute inline-flex h-full w-full animate-pulse rounded-full bg-blue-400 opacity-80" />
-                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-blue-500 ring-2 ring-background" />
+                    <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-blue-500 ring-2 ring-background" />
                   </span>
                 </span>
               )}
               {hasUnreadInbox && (
-                <span className="pointer-events-none absolute -bottom-0.5 -right-0.5 z-10 h-2.5 w-2.5 rounded-full bg-red-500 ring-2 ring-background" />
+                <span className="pointer-events-none absolute -bottom-0.5 -right-0.5 z-10 h-1.5 w-1.5 rounded-full bg-red-500 ring-2 ring-background" />
               )}
             </div>
           </a>
@@ -266,14 +267,14 @@ export function CompanyRail() {
   );
 
   return (
-    <div className="flex flex-col items-center w-[72px] shrink-0 h-full bg-background border-r border-border">
-      {/* Paperclip icon - aligned with top sections (implied line, no visible border) */}
-      <div className="flex items-center justify-center h-12 w-full shrink-0">
-        <Paperclip className="h-5 w-5 text-foreground" />
+    <div className="flex flex-col items-center w-9 shrink-0 h-full bg-background border-r border-border">
+      {/* Paperclip icon - minimal top branding */}
+      <div className="flex items-center justify-center h-10 w-full shrink-0">
+        <Paperclip className="h-4 w-4 text-foreground" />
       </div>
 
       {/* Company list */}
-      <div className="flex-1 flex flex-col items-center gap-2 py-3 w-full overflow-y-auto overflow-x-hidden scrollbar-none">
+      <div className="flex-1 flex flex-col items-center gap-1.5 py-2 w-full overflow-y-auto overflow-x-hidden scrollbar-none">
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -303,18 +304,18 @@ export function CompanyRail() {
       </div>
 
       {/* Separator before add button */}
-      <div className="w-8 h-px bg-border mx-auto shrink-0" />
+      <div className="w-4 h-px bg-border mx-auto shrink-0" />
 
       {/* Add company button */}
-      <div className="flex items-center justify-center py-2 shrink-0">
+      <div className="flex items-center justify-center py-1.5 shrink-0">
         <Tooltip delayDuration={300}>
           <TooltipTrigger asChild>
             <button
               onClick={() => openOnboarding()}
-              className="flex items-center justify-center w-11 h-11 rounded-[22px] hover:rounded-[14px] border-2 border-dashed border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground transition-[border-color,color,border-radius] duration-150"
+              className="flex items-center justify-center w-[18px] h-[18px] rounded-[5px] hover:rounded-[4px] border border-dashed border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground transition-[border-color,color,border-radius] duration-150"
               aria-label="Add company"
             >
-              <Plus className="h-5 w-5" />
+              <Plus className="h-2.5 w-2.5" />
             </button>
           </TooltipTrigger>
           <TooltipContent side="right" sideOffset={8}>

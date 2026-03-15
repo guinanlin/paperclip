@@ -659,6 +659,7 @@ export function AgentDetail() {
           agent={agent}
           agentId={agent.id}
           companyId={resolvedCompanyId ?? undefined}
+          allAgents={allAgents}
           onDirtyChange={setConfigDirty}
           onSaveActionChange={setSaveConfigAction}
           onCancelActionChange={setCancelConfigAction}
@@ -707,11 +708,12 @@ function LatestRunCard({ runs, agentId }: { runs: HeartbeatRun[]; agentId: strin
   const summary = run.resultJson
     ? String((run.resultJson as Record<string, unknown>).summary ?? (run.resultJson as Record<string, unknown>).result ?? "")
     : run.error ?? "";
+  const hasSummary = summary.trim().length > 0;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 [&>*:first-child]:mt-0">
       <div className="flex w-full items-center justify-between">
-        <h3 className="flex items-center gap-2 text-sm font-medium">
+        <h3 className="flex items-center gap-2 text-sm font-medium mt-0">
           {isLive && (
             <span className="relative flex h-2 w-2">
               <span className="animate-pulse absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
@@ -751,8 +753,8 @@ function LatestRunCard({ runs, agentId }: { runs: HeartbeatRun[]; agentId: strin
           <span className="ml-auto text-xs text-muted-foreground">{relativeTime(run.createdAt)}</span>
         </div>
 
-        {summary && (
-          <div className="overflow-hidden max-h-16">
+        {hasSummary && (
+          <div className="overflow-hidden max-h-16 [&>*:first-child]:mt-0">
             <MarkdownBody className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{summary}</MarkdownBody>
           </div>
         )}
@@ -922,6 +924,7 @@ function AgentConfigurePage({
   agent,
   agentId,
   companyId,
+  allAgents,
   onDirtyChange,
   onSaveActionChange,
   onCancelActionChange,
@@ -931,6 +934,7 @@ function AgentConfigurePage({
   agent: Agent;
   agentId: string;
   companyId?: string;
+  allAgents?: Agent[];
   onDirtyChange: (dirty: boolean) => void;
   onSaveActionChange: (save: (() => void) | null) => void;
   onCancelActionChange: (cancel: (() => void) | null) => void;
@@ -964,6 +968,7 @@ function AgentConfigurePage({
         onSavingChange={onSavingChange}
         updatePermissions={updatePermissions}
         companyId={companyId}
+        allAgents={allAgents}
       />
       <div>
         <h3 className="text-sm font-medium mb-3">API Keys</h3>
@@ -1029,6 +1034,7 @@ function AgentConfigurePage({
 function ConfigurationTab({
   agent,
   companyId,
+  allAgents,
   onDirtyChange,
   onSaveActionChange,
   onCancelActionChange,
@@ -1037,6 +1043,7 @@ function ConfigurationTab({
 }: {
   agent: Agent;
   companyId?: string;
+  allAgents?: Agent[];
   onDirtyChange: (dirty: boolean) => void;
   onSaveActionChange: (save: (() => void) | null) => void;
   onCancelActionChange: (cancel: (() => void) | null) => void;
@@ -1089,6 +1096,7 @@ function ConfigurationTab({
       <AgentConfigForm
         mode="edit"
         agent={agent}
+        allAgents={allAgents}
         onSave={(patch) => updateAgent.mutate(patch)}
         isSaving={isConfigSaving}
         adapterModels={adapterModels}

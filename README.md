@@ -173,21 +173,26 @@ Paperclip handles the hard orchestration details correctly.
 
 Open source. Self-hosted. No Paperclip account required.
 
+**1. One-command setup (recommended)** — creates config, JWT secret for agent auth, and starts the server:
+
 ```bash
 npx paperclipai onboard --yes
 ```
 
-Or manually:
+**2. Manual setup** — if you prefer to clone and run yourself:
 
 ```bash
 git clone https://github.com/paperclipai/paperclip.git
 cd paperclip
 pnpm install
+npx paperclipai onboard --yes   # required: creates PAPERCLIP_AGENT_JWT_SECRET so agent heartbeats can call the API
 pnpm dev
 ```
 
 This starts the API server at `http://localhost:3100`. An embedded PostgreSQL database is created automatically — no setup required.
 
+> **Why run onboard?** It writes `PAPERCLIP_AGENT_JWT_SECRET` to `.env` next to your config. Without it, agent heartbeat runs do not receive an API key and get 401 on `/api/agents/me` (they cannot checkout tasks, comment, or submit hires).
+>
 > **Requirements:** Node.js 20+, pnpm 9.15+
 
 <br/>

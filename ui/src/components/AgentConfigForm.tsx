@@ -37,6 +37,7 @@ import {
   DraftNumberInput,
   help,
   adapterLabels,
+  roleLabels,
 } from "./agent-config-primitives";
 import { defaultCreateValues } from "./agent-config-defaults";
 import { getUIAdapter } from "../adapters";
@@ -44,6 +45,7 @@ import { ClaudeLocalAdvancedFields } from "../adapters/claude-local/config-field
 import { MarkdownEditor } from "./MarkdownEditor";
 import { ChoosePathButton } from "./PathInstructionsModal";
 import { OpenCodeLogoIcon } from "./OpenCodeLogoIcon";
+import { AgentIcon } from "./AgentIconPicker";
 
 /* ---- Create mode values ---- */
 
@@ -71,6 +73,7 @@ type AgentConfigFormProps = {
   | {
       mode: "edit";
       agent: Agent;
+      allAgents?: Agent[];
       onSave: (patch: Record<string, unknown>) => void;
       isSaving?: boolean;
     }
@@ -384,6 +387,14 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     ? (isCreate ? Boolean(val!.search) : eff("adapterConfig", "search", Boolean(config.search)))
     : false;
 
+  const allAgentsForEdit = !isCreate ? props.allAgents ?? [] : [];
+  const effectiveReportsToId = !isCreate
+    ? eff<string | null>("identity", "reportsTo", props.agent.reportsTo ?? null)
+    : null;
+  const currentReportsToAgent = !isCreate
+    ? allAgentsForEdit.find((a) => a.id === effectiveReportsToId) ?? null
+    : null;
+
   return (
     <div className={cn("relative", cards && "space-y-6")}>
       {/* ---- Floating Save button (edit mode, when dirty) ---- */}
@@ -442,6 +453,75 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                   return asset.contentPath;
                 }}
               />
+            </Field>
+            <Field label="Reports to">
+              <Popover>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs hover:bg-accent/50 transition-colors"
+                  >
+                    {currentReportsToAgent ? (
+                      <>
+                        <span className="inline-flex items-center gap-1.5">
+                          <AgentIcon
+                            icon={currentReportsToAgent.icon}
+                            className="h-3.5 w-3.5 text-muted-foreground"
+                          />
+                          <span className="truncate">
+                            Reports to {currentReportsToAgent.name}
+                          </span>
+                        </span>
+                        <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                      </>
+                    ) : (
+                      <>
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="h-3.5 w-3.5 rounded-full bg-muted flex items-center justify-center text-[10px] text-muted-foreground">
+                            ?
+                          </span>
+                          <span className="truncate">No manager</span>
+                        </span>
+                        <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                      </>
+                    )}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-56 p-1" align="start">
+                  <button
+                    type="button"
+                    className={cn(
+                      "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50",
+                      !effectiveReportsToId && "bg-accent",
+                    )}
+                    onClick={() => mark("identity", "reportsTo", null)}
+                  >
+                    No manager
+                  </button>
+                  {allAgentsForEdit
+                    .filter((a) => a.id !== props.agent.id && a.status !== "terminated")
+                    .map((a) => (
+                      <button
+                        key={a.id}
+                        type="button"
+                        className={cn(
+                          "flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 truncate",
+                          a.id === effectiveReportsToId && "bg-accent",
+                        )}
+                        onClick={() => mark("identity", "reportsTo", a.id)}
+                      >
+                        <AgentIcon
+                          icon={a.icon}
+                          className="shrink-0 h-3.5 w-3.5 text-muted-foreground"
+                        />
+                        <span className="truncate">{a.name}</span>
+                        <span className="text-muted-foreground ml-auto">
+                          {roleLabels[a.role] ?? a.role}
+                        </span>
+                      </button>
+                    ))}
+                </PopoverContent>
+              </Popover>
             </Field>
             {isLocal && (
               <Field label="Prompt Template" hint={help.promptTemplate}>

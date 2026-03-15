@@ -159,7 +159,7 @@ function ProjectIssuesList({ projectId, companyId }: { projectId: string; compan
     return ids;
   }, [liveRuns]);
 
-  const { data: issues, isLoading, error } = useQuery({
+  const { data: issues, isLoading, error, refetch, isRefetching } = useQuery({
     queryKey: queryKeys.issues.listByProject(companyId, projectId),
     queryFn: () => issuesApi.list(companyId, { projectId }),
     enabled: !!companyId,
@@ -184,6 +184,8 @@ function ProjectIssuesList({ projectId, companyId }: { projectId: string; compan
       projectId={projectId}
       viewStateKey={`paperclip:project-view:${projectId}`}
       onUpdateIssue={(id, data) => updateIssue.mutate({ id, data })}
+      onRefresh={refetch}
+      isRefetching={isRefetching}
     />
   );
 }

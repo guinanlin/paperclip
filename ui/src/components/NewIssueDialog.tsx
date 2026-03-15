@@ -45,6 +45,9 @@ import { InlineEntitySelector, type InlineEntityOption } from "./InlineEntitySel
 
 const DRAFT_KEY = "paperclip:issue-draft";
 const DEBOUNCE_MS = 800;
+
+/** Quick title templates shown above the issue title field for one-click fill. */
+const QUICK_TITLE_TEMPLATES = ["员工招聘", "产品定义", "需求评审", "新需求开发", "Bug 修复", "文档编写"];
 // TODO(issue-worktree-support): re-enable this UI once the workflow is ready to ship.
 const SHOW_EXPERIMENTAL_ISSUE_WORKTREE_UI = false;
 
@@ -687,6 +690,21 @@ export function NewIssueDialog() {
 
         {/* Title */}
         <div className="px-4 pt-4 pb-2 shrink-0">
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {QUICK_TITLE_TEMPLATES.map((label) => (
+              <button
+                key={label}
+                type="button"
+                className={cn(
+                  "px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
+                  "text-muted-foreground hover:text-foreground hover:bg-muted border border-transparent hover:border-border",
+                )}
+                onClick={() => setTitle(label)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <textarea
             className="w-full text-lg font-semibold bg-transparent outline-none resize-none overflow-hidden placeholder:text-muted-foreground/50"
             placeholder="Issue title"

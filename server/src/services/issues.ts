@@ -311,6 +311,30 @@ function withActiveRuns(
   }));
 }
 
+type ProjectNameRow = { id: string; name: string };
+
+async function withProjectNames<T extends { projectId: string | null }>(
+  dbOrTx: any,
+  companyId: string,
+  rows: T[],
+): Promise<(T & { project: ProjectNameRow | null })[]> {
+  const projectIds = [...new Set(rows.map((r) => r.projectId).filter((id): id is string => id != null))];
+  if (projectIds.length === 0) {
+    return rows.map((r) => ({ ...r, project: null as ProjectNameRow | null }));
+  }
+  const projectRows = await dbOrTx
+    .select({ id: projects.id, name: projects.name })
+    .from(projects)
+    .where(and(eq(projects.companyId, companyId), inArray(projects.id, projectIds)));
+  const projectMap = new Map<string, ProjectNameRow>(
+    projectRows.map((p: ProjectNameRow) => [p.id, { id: p.id, name: p.name }]),
+  );
+  return rows.map((row) => ({
+    ...row,
+    project: row.projectId ? projectMap.get(row.projectId) ?? null : null,
+  }));
+}
+
 export function issueService(db: Db) {
   async function assertAssignableAgent(companyId: string, agentId: string) {
     const assignee = await db
@@ -514,11 +538,12 @@ export function issueService(db: Db) {
       const withLabels = await withIssueLabels(db, rows);
       const runMap = await activeRunMapForIssues(db, withLabels);
       const withRuns = withActiveRuns(withLabels, runMap);
-      if (!contextUserId || withRuns.length === 0) {
-        return withRuns;
+      const withProjects = await withProjectNames(db, companyId, withRuns);
+      if (!contextUserId || withProjects.length === 0) {
+        return withProjects;
       }
 
-      const issueIds = withRuns.map((row) => row.id);
+      const issueIds = withProjects.map((row) => row.id);
       const statsRows = await db
         .select({
           issueId: issueComments.issueId,
@@ -558,7 +583,7 @@ export function issueService(db: Db) {
       const statsByIssueId = new Map(statsRows.map((row) => [row.issueId, row]));
       const readByIssueId = new Map(readRows.map((row) => [row.issueId, row.myLastReadAt]));
 
-      return withRuns.map((row) => ({
+      return withProjects.map((row) => ({
         ...row,
         ...deriveIssueUserContext(row, contextUserId, {
           myLastCommentAt: statsByIssueId.get(row.id)?.myLastCommentAt ?? null,

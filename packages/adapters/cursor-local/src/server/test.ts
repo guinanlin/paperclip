@@ -36,6 +36,18 @@ function firstNonEmptyLine(text: string): string {
   );
 }
 
+function probeResponseLooksLikeHello(summary: string): boolean {
+  const s = summary.trim();
+  if (!s) return false;
+  return (
+    /\bhello\b/i.test(s) ||
+    /\bhi\b/i.test(s) ||
+    /\bhey\b/i.test(s) ||
+    /你好/i.test(s) ||
+    /hiya\b/i.test(s)
+  );
+}
+
 function commandLooksLike(command: string, expected: string): boolean {
   const base = path.basename(command).toLowerCase();
   return base === expected || base === `${expected}.cmd` || base === `${expected}.exe`;
@@ -100,7 +112,8 @@ export async function testEnvironment(
 
   const configCursorApiKey = env.CURSOR_API_KEY;
   const hostCursorApiKey = process.env.CURSOR_API_KEY;
-  if (isNonEmpty(configCursorApiKey) || isNonEmpty(hostCursorApiKey)) {
+  const cursorApiKeySet = isNonEmpty(configCursorApiKey) || isNonEmpty(hostCursorApiKey);
+  if (cursorApiKeySet) {
     const source = isNonEmpty(configCursorApiKey) ? "adapter config env" : "server environment";
     checks.push({
       code: "cursor_api_key_present",
@@ -108,7 +121,13 @@ export async function testEnvironment(
       message: "CURSOR_API_KEY is set for Cursor authentication.",
       detail: `Detected in ${source}.`,
     });
-  } else {
+  }
+
+  const canRunProbe =
+    checks.every((check) => check.code !== "cursor_cwd_invalid" && check.code !== "cursor_command_unresolvable");
+  const willRunProbe = canRunProbe && commandLooksLike(command, "agent");
+
+  if (!cursorApiKeySet && !willRunProbe) {
     checks.push({
       code: "cursor_api_key_missing",
       level: "warn",
@@ -116,9 +135,6 @@ export async function testEnvironment(
       hint: "Set CURSOR_API_KEY in adapter env or run `agent login`.",
     });
   }
-
-  const canRunProbe =
-    checks.every((check) => check.code !== "cursor_cwd_invalid" && check.code !== "cursor_command_unresolvable");
   if (canRunProbe) {
     if (!commandLooksLike(command, "agent")) {
       checks.push({
@@ -149,8 +165,8 @@ export async function testEnvironment(
         {
           cwd,
           env,
-          timeoutSec: 45,
-          graceSec: 5,
+          timeoutSec: 90,
+          graceSec: 10,
           onLog: async () => {},
         },
       );
@@ -162,12 +178,20 @@ export async function testEnvironment(
         checks.push({
           code: "cursor_hello_probe_timed_out",
           level: "warn",
-          message: "Cursor hello probe timed out.",
-          hint: "Retry the probe. If this persists, verify `agent -p --mode ask --output-format json \"Respond with hello.\"` manually.",
+          message: "Cursor hello probe timed out (90s).",
+          hint: "First run or slow network can cause this. Retry Test now, or run manually: `agent -p --mode ask --output-format json --workspace <cwd> \"Respond with hello.\"` to confirm the agent works.",
         });
+        if (!cursorApiKeySet) {
+          checks.push({
+            code: "cursor_api_key_missing",
+            level: "warn",
+            message: "CURSOR_API_KEY is not set. Cursor runs may fail until authentication is configured.",
+            hint: "Set CURSOR_API_KEY in adapter env or run `agent login`.",
+          });
+        }
       } else if ((probe.exitCode ?? 1) === 0) {
         const summary = parsed.summary.trim();
-        const hasHello = /\bhello\b/i.test(summary);
+        const hasHello = probeResponseLooksLikeHello(summary);
         checks.push({
           code: hasHello ? "cursor_hello_probe_passed" : "cursor_hello_probe_unexpected_output",
           level: hasHello ? "info" : "warn",
@@ -181,6 +205,23 @@ export async function testEnvironment(
                 hint: "Try `agent -p --mode ask --output-format json \"Respond with hello.\"` manually to inspect full output.",
               }),
         });
+        if (!cursorApiKeySet) {
+          if (hasHello) {
+            checks.push({
+              code: "cursor_auth_via_agent_login",
+              level: "info",
+              message: "Authentication is working via agent login (probe succeeded).",
+              detail: "CURSOR_API_KEY is not set; Cursor CLI is using stored credentials.",
+            });
+          } else {
+            checks.push({
+              code: "cursor_api_key_missing",
+              level: "warn",
+              message: "CURSOR_API_KEY is not set. Cursor runs may fail until authentication is configured.",
+              hint: "Set CURSOR_API_KEY in adapter env or run `agent login`.",
+            });
+          }
+        }
       } else if (CURSOR_AUTH_REQUIRED_RE.test(authEvidence)) {
         checks.push({
           code: "cursor_hello_probe_auth_required",
@@ -189,6 +230,14 @@ export async function testEnvironment(
           ...(detail ? { detail } : {}),
           hint: "Run `agent login` or configure CURSOR_API_KEY in adapter env/shell, then retry the probe.",
         });
+        if (!cursorApiKeySet) {
+          checks.push({
+            code: "cursor_api_key_missing",
+            level: "warn",
+            message: "CURSOR_API_KEY is not set. Cursor runs may fail until authentication is configured.",
+            hint: "Set CURSOR_API_KEY in adapter env or run `agent login`.",
+          });
+        }
       } else {
         checks.push({
           code: "cursor_hello_probe_failed",
@@ -197,6 +246,14 @@ export async function testEnvironment(
           ...(detail ? { detail } : {}),
           hint: "Run `agent -p --mode ask --output-format json \"Respond with hello.\"` manually in this working directory to debug.",
         });
+        if (!cursorApiKeySet) {
+          checks.push({
+            code: "cursor_api_key_missing",
+            level: "warn",
+            message: "CURSOR_API_KEY is not set. Cursor runs may fail until authentication is configured.",
+            hint: "Set CURSOR_API_KEY in adapter env or run `agent login`.",
+          });
+        }
       }
     }
   }

@@ -39,9 +39,9 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="w-60 h-full min-h-0 border-r border-border bg-background flex flex-col">
+    <aside className="w-52 h-full min-h-0 border-r border-border bg-background flex flex-col">
       {/* Top bar: Company name (bold) + Search — aligned with top sections (no visible border) */}
-      <div className="flex items-center gap-1 px-3 h-12 shrink-0">
+      <div className="flex items-center gap-1 px-2 h-10 shrink-0">
         {selectedCompany?.brandColor && (
           <div
             className="w-4 h-4 rounded-sm shrink-0 ml-1"
@@ -61,14 +61,14 @@ export function Sidebar() {
         </Button>
       </div>
 
-      <nav className="flex-1 min-h-0 overflow-y-auto scrollbar-auto-hide flex flex-col gap-4 px-3 py-2">
+      <nav className="flex-1 min-h-0 overflow-y-auto scrollbar-auto-hide flex flex-col gap-2 px-2 py-1.5">
         <div className="flex flex-col gap-0.5">
           {/* New Issue button aligned with nav items */}
           <button
             onClick={() => openNewIssue()}
-            className="flex items-center gap-2.5 px-3 py-2 text-[13px] font-medium text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
+            className="flex items-center gap-2 px-2 py-1.5 text-[12px] font-medium text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors rounded-md"
           >
-            <SquarePen className="h-4 w-4 shrink-0" />
+            <SquarePen className="h-3.5 w-3.5 shrink-0" />
             <span className="truncate">New Issue</span>
           </button>
           <SidebarNavItem to="/dashboard" label="Dashboard" icon={LayoutDashboard} liveCount={liveRunCount} />

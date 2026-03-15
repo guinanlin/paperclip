@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@/components/ui/collapsible";
-import { CircleDot, Plus, Filter, ArrowUpDown, Layers, Check, X, ChevronRight, List, Columns3, User, Search } from "lucide-react";
+import { CircleDot, Plus, Filter, ArrowUpDown, Layers, Check, X, ChevronRight, List, Columns3, User, Search, RefreshCw } from "lucide-react";
 import { KanbanBoard } from "./KanbanBoard";
 import type { Issue } from "@paperclipai/shared";
 
@@ -147,6 +147,10 @@ interface IssuesListProps {
   initialSearch?: string;
   onSearchChange?: (search: string) => void;
   onUpdateIssue: (id: string, data: Record<string, unknown>) => void;
+  /** Optional refresh callback; when provided, a refresh icon is shown in the toolbar. */
+  onRefresh?: () => void;
+  /** When true, the refresh icon shows a loading state (e.g. while refetching). */
+  isRefetching?: boolean;
 }
 
 export function IssuesList({
@@ -162,6 +166,8 @@ export function IssuesList({
   initialSearch,
   onSearchChange,
   onUpdateIssue,
+  onRefresh,
+  isRefetching,
 }: IssuesListProps) {
   const { selectedCompanyId } = useCompany();
   const { openNewIssue } = useDialog();
@@ -303,6 +309,19 @@ export function IssuesList({
         </div>
 
         <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
+          {onRefresh != null && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs text-muted-foreground hover:text-foreground"
+              onClick={() => onRefresh()}
+              disabled={isRefetching}
+              title="刷新列表"
+              aria-label="刷新列表"
+            >
+              <RefreshCw className={cn("h-3.5 w-3.5 sm:h-3 sm:w-3", isRefetching && "animate-spin")} />
+            </Button>
+          )}
           {/* View mode toggle */}
           <div className="flex items-center border border-border rounded-md overflow-hidden mr-1">
             <button

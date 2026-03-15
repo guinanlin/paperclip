@@ -246,7 +246,7 @@ export function Layout() {
             <CompanyRail />
             {isInstanceSettingsRoute ? <InstanceSidebar /> : <Sidebar />}
           </div>
-          <div className="border-t border-r border-border px-3 py-2 bg-background">
+          <div className="border-t border-r border-border px-2 py-1.5 bg-background">
             <div className="flex items-center gap-1">
               <SidebarNavItem
                 to="/docs"
@@ -287,13 +287,13 @@ export function Layout() {
             <div
               className={cn(
                 "overflow-hidden transition-[width] duration-100 ease-out",
-                sidebarOpen ? "w-60" : "w-0"
+                sidebarOpen ? "w-52" : "w-0"
               )}
             >
               {isInstanceSettingsRoute ? <InstanceSidebar /> : <Sidebar />}
             </div>
           </div>
-          <div className="border-t border-r border-border px-3 py-2">
+          <div className="border-t border-r border-border px-2 py-1.5">
             <div className="flex items-center gap-1">
               <SidebarNavItem
                 to="/docs"
