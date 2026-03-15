@@ -25,17 +25,26 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { PluginSlotMount, usePluginSlots } from "@/plugins/slots";
 import type { Project } from "@paperclipai/shared";
+
+type ProjectSidebarSlot = ReturnType<typeof usePluginSlots>["slots"][number];
 
 function SortableProjectItem({
   activeProjectRef,
+  companyId,
+  companyPrefix,
   isMobile,
   project,
+  projectSidebarSlots,
   setSidebarOpen,
 }: {
   activeProjectRef: string | null;
+  companyId: string | null;
+  companyPrefix: string | null;
   isMobile: boolean;
   project: Project;
+  projectSidebarSlots: ProjectSidebarSlot[];
   setSidebarOpen: (open: boolean) => void;
 }) {
   const {
@@ -73,10 +82,6 @@ function SortableProjectItem({
             : "text-foreground/80 hover:bg-accent/50 hover:text-foreground",
         )}
       >
-        <span
-          className="shrink-0 h-3.5 w-3.5 rounded-sm"
-          style={{ backgroundColor: project.color ?? "#6366f1" }}
-        />
         <span className="flex-1 truncate">{project.name}</span>
       </NavLink>
     </div>
@@ -85,7 +90,7 @@ function SortableProjectItem({
 
 export function SidebarProjects() {
   const [open, setOpen] = useState(true);
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompany, selectedCompanyId } = useCompany();
   const { openNewProject } = useDialog();
   const { isMobile, setSidebarOpen } = useSidebar();
   const location = useLocation();
@@ -98,6 +103,12 @@ export function SidebarProjects() {
   const { data: session } = useQuery({
     queryKey: queryKeys.auth.session,
     queryFn: () => authApi.getSession(),
+  });
+  const { slots: projectSidebarSlots } = usePluginSlots({
+    slotTypes: ["projectSidebarItem"],
+    entityType: "project",
+    companyId: selectedCompanyId,
+    enabled: !!selectedCompanyId,
   });
 
   const currentUserId = session?.user?.id ?? session?.session?.userId ?? null;
@@ -178,8 +189,11 @@ export function SidebarProjects() {
                 <SortableProjectItem
                   key={project.id}
                   activeProjectRef={activeProjectRef}
+                  companyId={selectedCompanyId}
+                  companyPrefix={selectedCompany?.issuePrefix ?? null}
                   isMobile={isMobile}
                   project={project}
+                  projectSidebarSlots={projectSidebarSlots}
                   setSidebarOpen={setSidebarOpen}
                 />
               ))}

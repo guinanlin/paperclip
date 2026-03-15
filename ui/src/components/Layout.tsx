@@ -5,7 +5,6 @@ import { Link, Outlet, useLocation, useNavigate, useParams } from "@/lib/router"
 import { CompanyRail } from "./CompanyRail";
 import { Sidebar } from "./Sidebar";
 import { InstanceSidebar } from "./InstanceSidebar";
-import { SidebarNavItem } from "./SidebarNavItem";
 import { BreadcrumbBar } from "./BreadcrumbBar";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { CommandPalette } from "./CommandPalette";
@@ -15,6 +14,7 @@ import { NewGoalDialog } from "./NewGoalDialog";
 import { NewAgentDialog } from "./NewAgentDialog";
 import { ToastViewport } from "./ToastViewport";
 import { MobileBottomNav } from "./MobileBottomNav";
+import { WorktreeBanner } from "./WorktreeBanner";
 import { useDialog } from "../context/DialogContext";
 import { usePanel } from "../context/PanelContext";
 import { useCompany } from "../context/CompanyContext";
@@ -23,10 +23,42 @@ import { useTheme } from "../context/ThemeContext";
 import { useKeyboardShortcuts } from "../hooks/useKeyboardShortcuts";
 import { useCompanyPageMemory } from "../hooks/useCompanyPageMemory";
 import { healthApi } from "../api/health";
+import { shouldSyncCompanySelectionFromRoute } from "../lib/company-selection";
 import { queryKeys } from "../lib/queryKeys";
 import { cn } from "../lib/utils";
 import { NotFoundPage } from "../pages/NotFound";
 import { Button } from "@/components/ui/button";
+
+const INSTANCE_SETTINGS_MEMORY_KEY = "paperclip.lastInstanceSettingsPath";
+const DEFAULT_INSTANCE_SETTINGS_PATH = "/instance/settings/heartbeats";
+
+function normalizeRememberedInstanceSettingsPath(rawPath: string | null): string {
+  if (!rawPath) return DEFAULT_INSTANCE_SETTINGS_PATH;
+
+  const match = rawPath.match(/^([^?#]*)(\?[^#]*)?(#.*)?$/);
+  const pathname = match?.[1] ?? rawPath;
+  const search = match?.[2] ?? "";
+  const hash = match?.[3] ?? "";
+
+  if (pathname === "/instance/settings/heartbeats" || pathname === "/instance/settings/plugins") {
+    return `${pathname}${search}${hash}`;
+  }
+
+  if (/^\/instance\/settings\/plugins\/[^/?#]+$/.test(pathname)) {
+    return `${pathname}${search}${hash}`;
+  }
+
+  return DEFAULT_INSTANCE_SETTINGS_PATH;
+}
+
+function readRememberedInstanceSettingsPath(): string {
+  if (typeof window === "undefined") return DEFAULT_INSTANCE_SETTINGS_PATH;
+  try {
+    return normalizeRememberedInstanceSettingsPath(window.localStorage.getItem(INSTANCE_SETTINGS_MEMORY_KEY));
+  } catch {
+    return DEFAULT_INSTANCE_SETTINGS_PATH;
+  }
+}
 
 export function Layout() {
   const { sidebarOpen, setSidebarOpen, toggleSidebar, isMobile } = useSidebar();
@@ -37,6 +69,7 @@ export function Layout() {
     loading: companiesLoading,
     selectedCompany,
     selectedCompanyId,
+    selectionSource,
     setSelectedCompanyId,
   } = useCompany();
   const { theme, toggleTheme } = useTheme();
@@ -47,6 +80,7 @@ export function Layout() {
   const onboardingTriggered = useRef(false);
   const lastMainScrollTop = useRef(0);
   const [mobileNavVisible, setMobileNavVisible] = useState(true);
+  const [instanceSettingsTarget, setInstanceSettingsTarget] = useState<string>(() => readRememberedInstanceSettingsPath());
   const nextTheme = theme === "dark" ? "light" : "dark";
   const matchedCompany = useMemo(() => {
     if (!companyPrefix) return null;
@@ -89,7 +123,13 @@ export function Layout() {
       return;
     }
 
-    if (selectedCompanyId !== matchedCompany.id) {
+    if (
+      shouldSyncCompanySelectionFromRoute({
+        selectionSource,
+        selectedCompanyId,
+        routeCompanyId: matchedCompany.id,
+      })
+    ) {
       setSelectedCompanyId(matchedCompany.id, { source: "route_sync" });
     }
   }, [
@@ -100,6 +140,7 @@ export function Layout() {
     location.pathname,
     location.search,
     navigate,
+    selectionSource,
     selectedCompanyId,
     setSelectedCompanyId,
   ]);
@@ -211,11 +252,26 @@ export function Layout() {
     };
   }, [isMobile]);
 
+  useEffect(() => {
+    if (!location.pathname.startsWith("/instance/settings/")) return;
+
+    const nextPath = normalizeRememberedInstanceSettingsPath(
+      `${location.pathname}${location.search}${location.hash}`,
+    );
+    setInstanceSettingsTarget(nextPath);
+
+    try {
+      window.localStorage.setItem(INSTANCE_SETTINGS_MEMORY_KEY, nextPath);
+    } catch {
+      // Ignore storage failures in restricted environments.
+    }
+  }, [location.hash, location.pathname, location.search]);
+
   return (
     <div
       className={cn(
         "bg-background text-foreground pt-[env(safe-area-inset-top)]",
-        isMobile ? "min-h-dvh" : "flex h-dvh overflow-hidden",
+        isMobile ? "min-h-dvh" : "flex h-dvh flex-col overflow-hidden",
       )}
     >
       <a
@@ -224,15 +280,16 @@ export function Layout() {
       >
         Skip to Main Content
       </a>
-      {/* Mobile backdrop */}
-      {isMobile && sidebarOpen && (
-        <button
-          type="button"
-          className="fixed inset-0 z-40 bg-black/50"
-          onClick={() => setSidebarOpen(false)}
-          aria-label="Close sidebar"
-        />
-      )}
+      <WorktreeBanner />
+      <div className={cn("min-h-0 flex-1", isMobile ? "w-full" : "flex overflow-hidden")}>
+        {isMobile && sidebarOpen && (
+          <button
+            type="button"
+            className="fixed inset-0 z-40 bg-black/50"
+            onClick={() => setSidebarOpen(false)}
+            aria-label="Close sidebar"
+          />
+        )}
 
       {/* Combined sidebar area: company rail + inner sidebar + docs bar */}
       {isMobile ? (
@@ -347,16 +404,17 @@ export function Layout() {
               isMobile ? "overflow-visible pb-[calc(5rem+env(safe-area-inset-bottom))]" : "overflow-auto",
             )}
           >
-            {hasUnknownCompanyPrefix ? (
-              <NotFoundPage
-                scope="invalid_company_prefix"
-                requestedPrefix={companyPrefix ?? selectedCompany?.issuePrefix}
-              />
-            ) : (
-              <Outlet />
-            )}
-          </main>
-          <PropertiesPanel />
+              {hasUnknownCompanyPrefix ? (
+                <NotFoundPage
+                  scope="invalid_company_prefix"
+                  requestedPrefix={companyPrefix ?? selectedCompany?.issuePrefix}
+                />
+              ) : (
+                <Outlet />
+              )}
+            </main>
+            <PropertiesPanel />
+          </div>
         </div>
       </div>
       {isMobile && <MobileBottomNav visible={mobileNavVisible} />}
