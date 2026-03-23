@@ -91,6 +91,26 @@ function appendExcerpt(prev: string, chunk: string) {
   return appendWithCap(prev, chunk, MAX_EXCERPT_BYTES);
 }
 
+const RUN_RESULT_COMMENT_MAX_CHARS = 32 * 1024;
+
+function buildRunResultComment(stdoutExcerpt: string, stderrExcerpt: string): string {
+  const out = stdoutExcerpt.trim();
+  const err = stderrExcerpt.trim();
+  if (out) {
+    const body = `Run completed.\n\n\`\`\`\n${out}\n\`\`\``;
+    return body.length > RUN_RESULT_COMMENT_MAX_CHARS
+      ? body.slice(0, RUN_RESULT_COMMENT_MAX_CHARS - 20) + "\n\n...(truncated)\n```"
+      : body;
+  }
+  if (err) {
+    const body = `Run completed (stderr):\n\n\`\`\`\n${err}\n\`\`\``;
+    return body.length > RUN_RESULT_COMMENT_MAX_CHARS
+      ? body.slice(0, RUN_RESULT_COMMENT_MAX_CHARS - 20) + "\n\n...(truncated)\n```"
+      : body;
+  }
+  return "Run completed.";
+}
+
 function normalizeMaxConcurrentRuns(value: unknown) {
   const parsed = Math.floor(asNumber(value, HEARTBEAT_MAX_CONCURRENT_RUNS_DEFAULT));
   if (!Number.isFinite(parsed)) return HEARTBEAT_MAX_CONCURRENT_RUNS_DEFAULT;
@@ -1469,11 +1489,16 @@ export function heartbeatService(db: Db) {
             id: issues.id,
             identifier: issues.identifier,
             title: issues.title,
+            description: issues.description,
           })
           .from(issues)
           .where(and(eq(issues.id, issueId), eq(issues.companyId, agent.companyId)))
           .then((rows) => rows[0] ?? null)
       : null;
+    if (issueRef) {
+      context.paperclipIssueTitle = issueRef.title ?? "";
+      context.paperclipIssueDescription = issueRef.description ?? "";
+    }
     const executionWorkspace = await realizeExecutionWorkspace({
       base: {
         baseCwd: resolvedWorkspace.cwd,
@@ -1926,6 +1951,17 @@ export function heartbeatService(db: Db) {
           },
         });
         await releaseIssueExecutionAndPromote(finalizedRun);
+        if (issueId && outcome === "succeeded") {
+          try {
+            const runResultBody = buildRunResultComment(stdoutExcerpt, stderrExcerpt);
+            await issuesSvc.addComment(issueId, runResultBody, { agentId: agent.id });
+          } catch (commentErr) {
+            logger.warn(
+              { err: commentErr, runId: finalizedRun.id, issueId },
+              "Failed to post run result comment to issue",
+            );
+          }
+        }
       }
 
       if (finalizedRun) {

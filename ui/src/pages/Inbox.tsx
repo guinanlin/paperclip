@@ -48,7 +48,7 @@ import {
   type InboxTab,
   saveLastInboxTab,
 } from "../lib/inbox";
-import { useDismissedInboxItems } from "../hooks/useInboxBadge";
+import { useDismissedInboxItems, useInboxBadge } from "../hooks/useInboxBadge";
 
 type InboxCategoryFilter =
   | "everything"
@@ -243,10 +243,13 @@ export function Inbox() {
   const [allCategoryFilter, setAllCategoryFilter] = useState<InboxCategoryFilter>("everything");
   const [allApprovalFilter, setAllApprovalFilter] = useState<InboxApprovalFilter>("all");
   const { dismissed, dismiss } = useDismissedInboxItems();
+  const inboxBadge = useInboxBadge(selectedCompanyId);
 
   const pathSegment = location.pathname.split("/").pop() ?? "recent";
   const tab: InboxTab =
-    pathSegment === "all" || pathSegment === "unread" ? pathSegment : "recent";
+    pathSegment === "all" || pathSegment === "unread" || pathSegment === "actionable"
+      ? pathSegment
+      : "recent";
   const issueLinkState = useMemo(
     () =>
       createIssueDetailLocationState(
@@ -516,21 +519,22 @@ export function Inbox() {
     allCategoryFilter === "everything" || allCategoryFilter === "failed_runs";
   const showAlertsCategory = allCategoryFilter === "everything" || allCategoryFilter === "alerts";
 
+  const isUnreadOrActionable = tab === "unread" || tab === "actionable";
   const approvalsToRender = tab === "all" ? filteredAllApprovals : actionableApprovals;
   const showTouchedSection =
     tab === "all"
       ? showTouchedCategory && hasTouchedIssues
-      : tab === "unread"
+      : isUnreadOrActionable
         ? unreadTouchedIssues.length > 0
         : hasTouchedIssues;
   const showJoinRequestsSection =
-    tab === "all" ? showJoinRequestsCategory && hasJoinRequests : tab === "unread" && hasJoinRequests;
+    tab === "all" ? showJoinRequestsCategory && hasJoinRequests : isUnreadOrActionable && hasJoinRequests;
   const showApprovalsSection = tab === "all"
     ? showApprovalsCategory && filteredAllApprovals.length > 0
     : actionableApprovals.length > 0;
   const showFailedRunsSection =
-    tab === "all" ? showFailedRunsCategory && hasRunFailures : tab === "unread" && hasRunFailures;
-  const showAlertsSection = tab === "all" ? showAlertsCategory && hasAlerts : tab === "unread" && hasAlerts;
+    tab === "all" ? showFailedRunsCategory && hasRunFailures : isUnreadOrActionable && hasRunFailures;
+  const showAlertsSection = tab === "all" ? showAlertsCategory && hasAlerts : isUnreadOrActionable && hasAlerts;
 
   const visibleSections = [
     showFailedRunsSection ? "failed_runs" : null,
@@ -561,9 +565,20 @@ export function Inbox() {
           <Tabs value={tab} onValueChange={(value) => navigate(`/inbox/${value}`)}>
             <PageTabBar
               items={[
+                { value: "recent", label: "Recent" },
                 {
-                  value: "recent",
-                  label: "Recent",
+                  value: "actionable",
+                  label:
+                    inboxBadge.inbox > 0 ? (
+                      <>
+                        Need attention{" "}
+                        <span className="ml-1.5 rounded-full bg-primary px-1.5 py-0.5 text-xs leading-none text-primary-foreground">
+                          {inboxBadge.inbox}
+                        </span>
+                      </>
+                    ) : (
+                      "Need attention"
+                    ),
                 },
                 { value: "unread", label: "Unread" },
                 { value: "all", label: "All" },
@@ -634,11 +649,13 @@ export function Inbox() {
         <EmptyState
           icon={InboxIcon}
           message={
-            tab === "unread"
-              ? "No new inbox items."
-              : tab === "recent"
-                ? "No recent inbox items."
-                : "No inbox items match these filters."
+            tab === "actionable"
+              ? "No items need attention."
+              : tab === "unread"
+                ? "No new inbox items."
+                : tab === "recent"
+                  ? "No recent inbox items."
+                  : "No inbox items match these filters."
           }
         />
       )}
@@ -648,7 +665,7 @@ export function Inbox() {
           {showSeparatorBefore("approvals") && <Separator />}
           <div>
             <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              {tab === "unread" ? "Approvals Needing Action" : "Approvals"}
+              {isUnreadOrActionable ? "Approvals Needing Action" : "Approvals"}
             </h3>
             <div className="grid gap-3">
               {approvalsToRender.map((approval) => (
@@ -811,7 +828,7 @@ export function Inbox() {
           {showSeparatorBefore("issues_i_touched") && <Separator />}
           <div>
             <div>
-              {(tab === "unread" ? unreadTouchedIssues : touchedIssues).map((issue) => {
+              {(isUnreadOrActionable ? unreadTouchedIssues : touchedIssues).map((issue) => {
                 const isUnread = issue.isUnreadForMe && !fadingOutIssues.has(issue.id);
                 const isFading = fadingOutIssues.has(issue.id);
                 return (

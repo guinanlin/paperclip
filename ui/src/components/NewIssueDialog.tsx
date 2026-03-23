@@ -48,6 +48,7 @@ import {
   Code,
   Pencil,
   Trash2,
+  Clipboard,
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import { extractProviderIdWithFallback } from "../lib/model-utils";
@@ -95,7 +96,7 @@ type StagedIssueFile = {
   title?: string | null;
 };
 
-const ISSUE_OVERRIDE_ADAPTER_TYPES = new Set(["claude_local", "codex_local", "opencode_local"]);
+const ISSUE_OVERRIDE_ADAPTER_TYPES = new Set(["claude_local", "codex_local", "opencode_local", "cursor"]);
 const STAGED_FILE_ACCEPT = "image/*,application/pdf,text/plain,text/markdown,application/json,text/csv,text/html,.md,.markdown";
 
 const ISSUE_THINKING_EFFORT_OPTIONS = {
@@ -120,6 +121,11 @@ const ISSUE_THINKING_EFFORT_OPTIONS = {
     { value: "high", label: "High" },
     { value: "max", label: "Max" },
   ],
+  cursor: [
+    { value: "", label: "Default" },
+    { value: "plan", label: "Plan" },
+    { value: "ask", label: "Ask" },
+  ],
 } as const;
 
 function buildAssigneeAdapterOverrides(input: {
@@ -138,6 +144,8 @@ function buildAssigneeAdapterOverrides(input: {
   if (input.thinkingEffortOverride) {
     if (adapterType === "codex_local") {
       adapterConfig.modelReasoningEffort = input.thinkingEffortOverride;
+    } else if (adapterType === "cursor") {
+      adapterConfig.mode = input.thinkingEffortOverride;
     } else if (adapterType === "opencode_local") {
       adapterConfig.variant = input.thinkingEffortOverride;
     } else if (adapterType === "claude_local") {
@@ -273,8 +281,10 @@ export function NewIssueDialog() {
   const [manageShortcutsOpen, setManageShortcutsOpen] = useState(false);
   const [editingShortcutId, setEditingShortcutId] = useState<string | null>(null);
   const [editShortcutForm, setEditShortcutForm] = useState({ title: "", description: "" });
+  const [parentContext, setParentContext] = useState("");
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const executionWorkspaceDefaultProjectId = useRef<string | null>(null);
+  const defaultAssigneeToProjectTeamRef = useRef(false);
 
   const effectiveCompanyId = dialogCompanyId ?? selectedCompanyId;
   const dialogCompany = companies.find((c) => c.id === effectiveCompanyId) ?? selectedCompany;
@@ -535,6 +545,16 @@ export function NewIssueDialog() {
       setAssigneeChrome(false);
       setUseIsolatedExecutionWorkspace(false);
       setExpectedOutputType(newIssueDefaults.expectedOutputType ?? "text");
+      defaultAssigneeToProjectTeamRef.current = Boolean(
+        newIssueDefaults.projectId && !newIssueDefaults.assigneeAgentId && !newIssueDefaults.assigneeUserId,
+      );
+    }
+    if (newIssueDefaults.parentId) {
+      setParentContext(newIssueDefaults.parentContext ?? "");
+      if (newIssueDefaults.projectId) setProjectId(newIssueDefaults.projectId);
+    }
+    if (!newIssueOpen) {
+      defaultAssigneeToProjectTeamRef.current = false;
     }
   }, [newIssueOpen, newIssueDefaults]);
 
@@ -546,10 +566,15 @@ export function NewIssueDialog() {
       setAssigneeChrome(false);
       return;
     }
+    if (assigneeAdapterType === "cursor") {
+      setAssigneeOptionsOpen(true);
+    }
 
     const validThinkingValues =
       assigneeAdapterType === "codex_local"
         ? ISSUE_THINKING_EFFORT_OPTIONS.codex_local
+        : assigneeAdapterType === "cursor"
+          ? ISSUE_THINKING_EFFORT_OPTIONS.cursor
         : assigneeAdapterType === "opencode_local"
           ? ISSUE_THINKING_EFFORT_OPTIONS.opencode_local
           : ISSUE_THINKING_EFFORT_OPTIONS.claude_local;
@@ -583,6 +608,7 @@ export function NewIssueDialog() {
     setStagedFiles([]);
     setIsFileDragOver(false);
     setCompanyOpen(false);
+    setParentContext("");
     executionWorkspaceDefaultProjectId.current = null;
   }
 
@@ -620,17 +646,25 @@ export function NewIssueDialog() {
           mode: useIsolatedExecutionWorkspace ? "isolated" : "project_primary",
         }
       : null;
+    const isSubIssue = Boolean(newIssueDefaults.parentId);
+    const finalDescription = isSubIssue
+      ? (parentContext.trim()
+          ? `## 父任务背景\n\n${parentContext.trim()}\n\n`
+          : "") + `## 本 Sub-issue 目标\n\n${description.trim() || "(无)"}`
+      : description.trim() || undefined;
+
     createIssue.mutate({
       companyId: effectiveCompanyId,
       stagedFiles,
       title: title.trim(),
-      description: description.trim() || undefined,
+      description: finalDescription,
       status,
       priority: priority || "medium",
       expectedOutputType: expectedOutputType || "text",
       ...(selectedAssigneeAgentId ? { assigneeAgentId: selectedAssigneeAgentId } : {}),
       ...(selectedAssigneeUserId ? { assigneeUserId: selectedAssigneeUserId } : {}),
       ...(projectId ? { projectId } : {}),
+      ...(newIssueDefaults.parentId ? { parentId: newIssueDefaults.parentId } : {}),
       ...(assigneeAdapterOverrides ? { assigneeAdapterOverrides } : {}),
       ...(executionWorkspaceSettings ? { executionWorkspaceSettings } : {}),
     });
@@ -722,29 +756,57 @@ export function NewIssueDialog() {
       ? "Claude options"
       : assigneeAdapterType === "codex_local"
         ? "Codex options"
+      : assigneeAdapterType === "cursor"
+        ? "Cursor options"
         : assigneeAdapterType === "opencode_local"
           ? "OpenCode options"
         : "Agent options";
   const thinkingEffortOptions =
     assigneeAdapterType === "codex_local"
       ? ISSUE_THINKING_EFFORT_OPTIONS.codex_local
+      : assigneeAdapterType === "cursor"
+        ? ISSUE_THINKING_EFFORT_OPTIONS.cursor
       : assigneeAdapterType === "opencode_local"
         ? ISSUE_THINKING_EFFORT_OPTIONS.opencode_local
       : ISSUE_THINKING_EFFORT_OPTIONS.claude_local;
   const recentAssigneeIds = useMemo(() => getRecentAssigneeIds(), [newIssueOpen]);
+  const currentProjectForAssignee = orderedProjects.find((p) => p.id === projectId);
+  const projectTeamMembers = currentProjectForAssignee?.teamMembers ?? [];
+  const useProjectTeamForAssignee =
+    projectId && projectTeamMembers.length > 0;
   const assigneeOptions = useMemo<InlineEntityOption[]>(
-    () => [
-      ...currentUserAssigneeOption(currentUserId),
-      ...sortAgentsByRecency(
-        (agents ?? []).filter((agent) => agent.status !== "terminated"),
-        recentAssigneeIds,
-      ).map((agent) => ({
-        id: assigneeValueFromSelection({ assigneeAgentId: agent.id }),
-        label: agent.name,
-        searchText: `${agent.name} ${agent.role} ${agent.title ?? ""}`,
-      })),
-    ],
-    [agents, currentUserId, recentAssigneeIds],
+    () => {
+      const userOpts = currentUserAssigneeOption(currentUserId);
+      if (useProjectTeamForAssignee) {
+        const agentMap = new Map((agents ?? []).map((a) => [a.id, a]));
+        const teamOpts: InlineEntityOption[] = projectTeamMembers.map((member) => {
+          const agent = member.agent ?? agentMap.get(member.agentId);
+          const label = agent?.name ?? member.agentId.slice(0, 8);
+          const searchText =
+            typeof agent === "object" && agent !== null
+              ? `${agent.name} ${"role" in agent ? agent.role : ""} ${"title" in agent ? agent.title ?? "" : ""}`.trim()
+              : label;
+          return {
+            id: assigneeValueFromSelection({ assigneeAgentId: member.agentId }),
+            label,
+            searchText,
+          };
+        });
+        return [...userOpts, ...teamOpts];
+      }
+      return [
+        ...userOpts,
+        ...sortAgentsByRecency(
+          (agents ?? []).filter((agent) => agent.status !== "terminated"),
+          recentAssigneeIds,
+        ).map((agent) => ({
+          id: assigneeValueFromSelection({ assigneeAgentId: agent.id }),
+          label: agent.name,
+          searchText: `${agent.name} ${agent.role} ${agent.title ?? ""}`,
+        })),
+      ];
+    },
+    [agents, currentUserId, recentAssigneeIds, useProjectTeamForAssignee, projectTeamMembers, projectId],
   );
   const projectOptions = useMemo<InlineEntityOption[]>(
     () =>
@@ -786,6 +848,22 @@ export function NewIssueDialog() {
       ),
     );
   }, [newIssueOpen, orderedProjects, projectId]);
+
+  useEffect(() => {
+    if (
+      !newIssueOpen ||
+      !projectId ||
+      !defaultAssigneeToProjectTeamRef.current ||
+      assigneeValue !== ""
+    ) {
+      return;
+    }
+    const project = orderedProjects.find((entry) => entry.id === projectId);
+    const firstMember = project?.teamMembers?.[0];
+    if (!firstMember) return;
+    defaultAssigneeToProjectTeamRef.current = false;
+    setAssigneeValue(assigneeValueFromSelection({ assigneeAgentId: firstMember.agentId }));
+  }, [newIssueOpen, projectId, assigneeValue, orderedProjects]);
   const modelOverrideOptions = useMemo<InlineEntityOption[]>(
     () => {
       return [...(assigneeAdapterModels ?? [])]
@@ -902,7 +980,7 @@ export function NewIssueDialog() {
               </PopoverContent>
             </Popover>
             <span className="text-muted-foreground/60">&rsaquo;</span>
-            <span>New issue</span>
+            <span>{newIssueDefaults.parentId ? "New sub issue" : "New issue"}</span>
           </div>
           <div className="flex items-center gap-1">
             <Button
@@ -1156,36 +1234,75 @@ export function NewIssueDialog() {
             </button>
             {assigneeOptionsOpen && (
               <div className="mt-2 rounded-md border border-border p-3 bg-muted/20 space-y-3">
-                <div className="space-y-1.5">
-                  <div className="text-xs text-muted-foreground">Model</div>
-                  <InlineEntitySelector
-                    value={assigneeModelOverride}
-                    options={modelOverrideOptions}
-                    placeholder="Default model"
-                    disablePortal
-                    noneLabel="Default model"
-                    searchPlaceholder="Search models..."
-                    emptyMessage="No models found."
-                    onChange={setAssigneeModelOverride}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <div className="text-xs text-muted-foreground">Thinking effort</div>
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    {thinkingEffortOptions.map((option) => (
-                      <button
-                        key={option.value || "default"}
-                        className={cn(
-                          "px-2 py-1 rounded-md text-xs border border-border hover:bg-accent/50 transition-colors",
-                          assigneeThinkingEffort === option.value && "bg-accent"
-                        )}
-                        onClick={() => setAssigneeThinkingEffort(option.value)}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
+                {assigneeAdapterType === "cursor" ? (
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <div className="text-xs text-muted-foreground shrink-0">Model</div>
+                      <div className="min-w-0 flex-1">
+                        <InlineEntitySelector
+                          value={assigneeModelOverride}
+                          options={modelOverrideOptions}
+                          placeholder="Default model"
+                          disablePortal
+                          noneLabel="Default model"
+                          searchPlaceholder="Search models..."
+                          emptyMessage="No models found."
+                          onChange={setAssigneeModelOverride}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <div className="text-xs text-muted-foreground">Mode</div>
+                      <div className="flex items-center gap-1.5">
+                        {thinkingEffortOptions.map((option) => (
+                          <button
+                            key={option.value || "default"}
+                            className={cn(
+                              "px-2 py-1 rounded-md text-xs border border-border hover:bg-accent/50 transition-colors",
+                              assigneeThinkingEffort === option.value && "bg-accent"
+                            )}
+                            onClick={() => setAssigneeThinkingEffort(option.value)}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <>
+                    <div className="space-y-1.5">
+                      <div className="text-xs text-muted-foreground">Model</div>
+                      <InlineEntitySelector
+                        value={assigneeModelOverride}
+                        options={modelOverrideOptions}
+                        placeholder="Default model"
+                        disablePortal
+                        noneLabel="Default model"
+                        searchPlaceholder="Search models..."
+                        emptyMessage="No models found."
+                        onChange={setAssigneeModelOverride}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <div className="text-xs text-muted-foreground">Thinking effort</div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {thinkingEffortOptions.map((option) => (
+                          <button
+                            key={option.value || "default"}
+                            className={cn(
+                              "px-2 py-1 rounded-md text-xs border border-border hover:bg-accent/50 transition-colors",
+                              assigneeThinkingEffort === option.value && "bg-accent"
+                            )}
+                            onClick={() => setAssigneeThinkingEffort(option.value)}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
                 {assigneeAdapterType === "claude_local" && (
                   <div className="flex items-center justify-between rounded-md border border-border px-2 py-1.5">
                     <div className="text-xs text-muted-foreground">Enable Chrome (--chrome)</div>
@@ -1210,6 +1327,38 @@ export function NewIssueDialog() {
           </div>
         )}
 
+        {newIssueDefaults.parentId ? (
+          <div className="px-4 pb-2 shrink-0 border-t border-border/60 pt-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-xs font-medium text-muted-foreground">父任务背景</label>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1.5 text-xs text-muted-foreground"
+                onClick={async () => {
+                  try {
+                    const text = await navigator.clipboard.readText();
+                    setParentContext((prev) => (prev ? `${prev}\n\n${text}` : text));
+                  } catch {
+                    // clipboard not available or denied
+                  }
+                }}
+              >
+                <Clipboard className="h-3.5 w-3.5" />
+                从剪贴板插入
+              </Button>
+            </div>
+            <textarea
+              className="w-full min-h-[80px] rounded-md border border-border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring resize-y"
+              placeholder="可粘贴父 issue 的总结，或从 Cursor 等环境复制后在此插入…"
+              value={parentContext}
+              onChange={(e) => setParentContext(e.target.value)}
+              readOnly={createIssue.isPending}
+            />
+          </div>
+        ) : null}
+
         {/* Description */}
         <div
           className={cn("px-4 pb-2 overflow-y-auto min-h-0 border-t border-border/60 pt-3", expanded ? "flex-1" : "")}
@@ -1228,7 +1377,7 @@ export function NewIssueDialog() {
               ref={descriptionEditorRef}
               value={description}
               onChange={setDescription}
-              placeholder="Add description..."
+              placeholder={newIssueDefaults.parentId ? "本 Sub-issue 目标…" : "Add description..."}
               bordered={false}
               mentions={mentionOptions}
               contentClassName={cn("text-sm text-muted-foreground pb-12", expanded ? "min-h-[220px]" : "min-h-[120px]")}

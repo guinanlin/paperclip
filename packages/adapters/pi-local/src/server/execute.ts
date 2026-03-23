@@ -290,10 +290,17 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       ? renderTemplate(bootstrapPromptTemplate, templateData).trim()
       : "";
   const sessionHandoffNote = asString(context.paperclipSessionHandoffMarkdown, "").trim();
+  const paperclipIssueTitle = asString(context.paperclipIssueTitle, "").trim();
+  const paperclipIssueDescription = asString(context.paperclipIssueDescription, "").trim();
+  const issueBlock =
+    paperclipIssueTitle || paperclipIssueDescription
+      ? `Current issue / task:\nTitle: ${paperclipIssueTitle || "(no title)"}\n${paperclipIssueDescription ? `\nDescription:\n${paperclipIssueDescription}` : ""}`
+      : "";
   const userPrompt = joinPromptSections([
     renderedBootstrapPrompt,
     sessionHandoffNote,
     renderedHeartbeatPrompt,
+    issueBlock,
   ]);
   const promptMetrics = {
     systemPromptChars: renderedSystemPromptExtension.length,

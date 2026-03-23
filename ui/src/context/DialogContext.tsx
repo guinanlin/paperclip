@@ -9,6 +9,10 @@ interface NewIssueDefaults {
   title?: string;
   description?: string;
   expectedOutputType?: "text" | "document" | "code";
+  /** When set, dialog is in "New sub issue" mode: inherits project, sends parentId, and shows parent context field. */
+  parentId?: string;
+  /** Pre-filled parent task summary for sub-issue (e.g. from summarize or paste). */
+  parentContext?: string;
 }
 
 interface NewGoalDefaults {

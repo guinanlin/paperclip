@@ -2,9 +2,11 @@ import { Router, type Request } from "express";
 import type { Db } from "@paperclipai/db";
 import {
   createProjectSchema,
+  createProjectTeamMemberSchema,
   createProjectWorkspaceSchema,
   isUuidLike,
   updateProjectSchema,
+  updateProjectTeamMemberSchema,
   updateProjectWorkspaceSchema,
 } from "@paperclipai/shared";
 import { validate } from "../middleware/validate.js";
@@ -224,6 +226,110 @@ export function projectRoutes(db: Db) {
       res.json(workspace);
     },
   );
+
+  router.post("/projects/:id/team", validate(createProjectTeamMemberSchema), async (req, res) => {
+    const id = req.params.id as string;
+    const existing = await svc.getById(id);
+    if (!existing) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    assertCompanyAccess(req, existing.companyId);
+    const member = await svc.addTeamMember(id, existing.companyId, req.body);
+    if (!member) {
+      res.status(422).json({ error: "Agent not found or already in project team" });
+      return;
+    }
+
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId: existing.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      action: "project.team_member_added",
+      entityType: "project",
+      entityId: id,
+      details: {
+        memberId: member.id,
+        agentId: member.agentId,
+        role: member.role,
+      },
+    });
+
+    res.status(201).json(member);
+  });
+
+  router.patch(
+    "/projects/:id/team/:memberId",
+    validate(updateProjectTeamMemberSchema),
+    async (req, res) => {
+      const id = req.params.id as string;
+      const memberId = req.params.memberId as string;
+      const existing = await svc.getById(id);
+      if (!existing) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+      assertCompanyAccess(req, existing.companyId);
+      const member = await svc.updateTeamMember(id, memberId, req.body);
+      if (!member) {
+        res.status(404).json({ error: "Project team member not found" });
+        return;
+      }
+
+      const actor = getActorInfo(req);
+      await logActivity(db, {
+        companyId: existing.companyId,
+        actorType: actor.actorType,
+        actorId: actor.actorId,
+        agentId: actor.agentId,
+        action: "project.team_member_updated",
+        entityType: "project",
+        entityId: id,
+        details: {
+          memberId: member.id,
+          agentId: member.agentId,
+          changedKeys: Object.keys(req.body).sort(),
+        },
+      });
+
+      res.json(member);
+    },
+  );
+
+  router.delete("/projects/:id/team/:memberId", async (req, res) => {
+    const id = req.params.id as string;
+    const memberId = req.params.memberId as string;
+    const existing = await svc.getById(id);
+    if (!existing) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+    assertCompanyAccess(req, existing.companyId);
+    const member = await svc.removeTeamMember(id, memberId);
+    if (!member) {
+      res.status(404).json({ error: "Project team member not found" });
+      return;
+    }
+
+    const actor = getActorInfo(req);
+    await logActivity(db, {
+      companyId: existing.companyId,
+      actorType: actor.actorType,
+      actorId: actor.actorId,
+      agentId: actor.agentId,
+      action: "project.team_member_removed",
+      entityType: "project",
+      entityId: id,
+      details: {
+        memberId: member.id,
+        agentId: member.agentId,
+      },
+    });
+
+    res.json(member);
+  });
 
   router.delete("/projects/:id/workspaces/:workspaceId", async (req, res) => {
     const id = req.params.id as string;

@@ -146,6 +146,15 @@ const openCodeThinkingEffortOptions = [
   { id: "max", label: "Max" },
 ] as const;
 
+const piThinkingEffortOptions = [
+  { id: "off", label: "Off" },
+  { id: "minimal", label: "Minimal" },
+  { id: "low", label: "Low" },
+  { id: "medium", label: "Medium" },
+  { id: "high", label: "High" },
+  { id: "xhigh", label: "XHigh" },
+] as const;
+
 const cursorModeOptions = [
   { id: "", label: "Auto" },
   { id: "plan", label: "Plan" },
@@ -288,18 +297,32 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
     adapterType === "codex_local" ||
     adapterType === "gemini_local" ||
     adapterType === "opencode_local" ||
+    adapterType === "pi_local" ||
     adapterType === "cursor";
   const uiAdapter = useMemo(() => getUIAdapter(adapterType), [adapterType]);
 
-  // Fetch adapter models for the effective adapter type
+  // For pi_local, list models using the configured command/cwd so the dropdown reflects the actual CLI
+  const piLocalConfig =
+    adapterType === "pi_local"
+      ? {
+          command: isCreate
+            ? String(props.values?.command ?? "")
+            : eff("adapterConfig", "command", String(config.command ?? "")),
+          cwd: isCreate
+            ? String(props.values?.cwd ?? "")
+            : eff("adapterConfig", "cwd", String(config.cwd ?? "")),
+        }
+      : undefined;
+
   const {
     data: fetchedModels,
     error: fetchedModelsError,
   } = useQuery({
     queryKey: selectedCompanyId
-      ? queryKeys.agents.adapterModels(selectedCompanyId, adapterType)
-      : ["agents", "none", "adapter-models", adapterType],
-    queryFn: () => agentsApi.adapterModels(selectedCompanyId!, adapterType),
+      ? queryKeys.agents.adapterModels(selectedCompanyId, adapterType, piLocalConfig)
+      : ["agents", "none", "adapter-models", adapterType, piLocalConfig ?? null],
+    queryFn: () =>
+      agentsApi.adapterModels(selectedCompanyId!, adapterType, piLocalConfig),
     enabled: Boolean(selectedCompanyId),
   });
   const models = fetchedModels ?? externalModels ?? [];
@@ -360,7 +383,9 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
         ? "mode"
         : adapterType === "opencode_local"
           ? "variant"
-          : "effort";
+          : adapterType === "pi_local"
+            ? "thinking"
+            : "effort";
   const thinkingEffortOptions =
     adapterType === "codex_local"
       ? codexThinkingEffortOptions
@@ -368,7 +393,9 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
         ? cursorModeOptions
         : adapterType === "opencode_local"
           ? openCodeThinkingEffortOptions
-          : claudeThinkingEffortOptions;
+          : adapterType === "pi_local"
+            ? piThinkingEffortOptions
+            : claudeThinkingEffortOptions;
   const currentThinkingEffort = isCreate
     ? val!.thinkingEffort
     : adapterType === "codex_local"
@@ -381,7 +408,9 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
         ? eff("adapterConfig", "mode", String(config.mode ?? ""))
       : adapterType === "opencode_local"
         ? eff("adapterConfig", "variant", String(config.variant ?? ""))
-      : eff("adapterConfig", "effort", String(config.effort ?? ""));
+      : adapterType === "pi_local"
+        ? eff("adapterConfig", "thinking", String(config.thinking ?? ""))
+        : eff("adapterConfig", "effort", String(config.effort ?? ""));
   const showThinkingEffort = adapterType !== "gemini_local";
   const codexSearchEnabled = adapterType === "codex_local"
     ? (isCreate ? Boolean(val!.search) : eff("adapterConfig", "search", Boolean(config.search)))
@@ -586,7 +615,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                     nextValues.model = DEFAULT_GEMINI_LOCAL_MODEL;
                   } else if (t === "cursor") {
                     nextValues.model = DEFAULT_CURSOR_LOCAL_MODEL;
-                  } else if (t === "opencode_local") {
+                  } else if (t === "opencode_local" || t === "pi_local") {
                     nextValues.model = "";
                   }
                   set!(nextValues);
@@ -608,6 +637,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                       effort: "",
                       modelReasoningEffort: "",
                       variant: "",
+                      thinking: "",
                       mode: "",
                       ...(t === "codex_local"
                         ? {
@@ -714,11 +744,13 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                       ? "codex"
                       : adapterType === "gemini_local"
                         ? "gemini"
-                      : adapterType === "cursor"
-                        ? "agent"
-                        : adapterType === "opencode_local"
-                          ? "opencode"
-                          : "claude"
+                        : adapterType === "cursor"
+                          ? "agent"
+                          : adapterType === "opencode_local"
+                            ? "opencode"
+                            : adapterType === "pi_local"
+                              ? "pi"
+                              : "claude"
                   }
                 />
               </Field>
@@ -733,9 +765,9 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                 }
                 open={modelOpen}
                 onOpenChange={setModelOpen}
-                allowDefault={adapterType !== "opencode_local"}
-                required={adapterType === "opencode_local"}
-                groupByProvider={adapterType === "opencode_local"}
+                allowDefault={adapterType !== "opencode_local" && adapterType !== "pi_local"}
+                required={adapterType === "opencode_local" || adapterType === "pi_local"}
+                groupByProvider={adapterType === "opencode_local" || adapterType === "pi_local"}
               />
               {fetchedModelsError && (
                 <p className="text-xs text-destructive">
@@ -1004,7 +1036,7 @@ function AdapterEnvironmentResult({ result }: { result: AdapterEnvironmentTestRe
 
 /* ---- Internal sub-components ---- */
 
-const ENABLED_ADAPTER_TYPES = new Set(["claude_local", "codex_local", "gemini_local", "opencode_local", "cursor"]);
+const ENABLED_ADAPTER_TYPES = new Set(["claude_local", "codex_local", "gemini_local", "opencode_local", "pi_local", "cursor"]);
 
 /** Display list includes all real adapter types plus UI-only coming-soon entries. */
 const ADAPTER_DISPLAY_LIST: { value: string; label: string; comingSoon: boolean }[] = [

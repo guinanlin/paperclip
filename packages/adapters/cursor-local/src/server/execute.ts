@@ -63,6 +63,14 @@ function normalizeMode(rawMode: string): "plan" | "ask" | null {
   return null;
 }
 
+function normalizeCursorModel(rawModel: string): string {
+  const model = rawModel.trim();
+  if (!model) return "";
+  // Cursor CLI no longer accepts "--model auto"; omit the flag to use CLI default.
+  if (model.toLowerCase() === "auto") return "";
+  return model;
+}
+
 function renderPaperclipEnvNote(env: Record<string, string>): string {
   const paperclipKeys = Object.keys(env)
     .filter((key) => key.startsWith("PAPERCLIP_"))
@@ -148,7 +156,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     "You are agent {{agent.id}} ({{agent.name}}). Continue your Paperclip work.",
   );
   const command = asString(config.command, "agent");
-  const model = asString(config.model, DEFAULT_CURSOR_LOCAL_MODEL).trim();
+  const model = normalizeCursorModel(asString(config.model, DEFAULT_CURSOR_LOCAL_MODEL));
   const mode = normalizeMode(asString(config.mode, ""));
 
   const workspaceContext = parseObject(context.paperclipWorkspace);

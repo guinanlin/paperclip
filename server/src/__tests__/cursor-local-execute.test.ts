@@ -97,6 +97,7 @@ describe("cursor execute", () => {
 
       const capture = JSON.parse(await fs.readFile(capturePath, "utf8")) as CapturePayload;
       expect(capture.argv).not.toContain("Follow the paperclip heartbeat.");
+      expect(capture.argv).not.toContain("--model");
       expect(capture.argv).not.toContain("--mode");
       expect(capture.argv).not.toContain("ask");
       expect(capture.paperclipEnvKeys).toEqual(
@@ -168,6 +169,7 @@ describe("cursor execute", () => {
       expect(result.errorMessage).toBeNull();
 
       const capture = JSON.parse(await fs.readFile(capturePath, "utf8")) as CapturePayload;
+      expect(capture.argv).not.toContain("--model");
       expect(capture.argv).toContain("--mode");
       expect(capture.argv).toContain("ask");
     } finally {

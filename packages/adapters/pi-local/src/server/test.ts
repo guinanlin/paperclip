@@ -112,9 +112,11 @@ export async function testEnvironment(
   const canRunProbe =
     checks.every((check) => check.code !== "pi_cwd_invalid" && check.code !== "pi_command_unresolvable");
 
+  let modelsDiscoveredCount = 0;
   if (canRunProbe) {
     try {
       const discovered = await discoverPiModelsCached({ command, cwd, env: runtimeEnv });
+      modelsDiscoveredCount = discovered.length;
       if (discovered.length > 0) {
         checks.push({
           code: "pi_models_discovered",
@@ -140,12 +142,21 @@ export async function testEnvironment(
   }
 
   const configuredModel = asString(config.model, "").trim();
+
   if (!configuredModel) {
+    const level: AdapterEnvironmentCheck["level"] =
+      modelsDiscoveredCount > 0 ? "warn" : "error";
     checks.push({
       code: "pi_model_required",
-      level: "error",
-      message: "Pi requires a configured model in provider/model format.",
-      hint: "Set adapterConfig.model using an ID from `pi --list-models`.",
+      level,
+      message:
+        modelsDiscoveredCount > 0
+          ? `Select a model in the Model dropdown above (${modelsDiscoveredCount} available).`
+          : "Pi requires a configured model in provider/model format.",
+      hint:
+        modelsDiscoveredCount > 0
+          ? "Choose a model from the dropdown and run Test again to pass."
+          : "Set adapterConfig.model using an ID from `pi --list-models`.",
     });
   } else if (canRunProbe) {
     // Verify model is in the list

@@ -6,6 +6,7 @@ import type {
   IssueComment,
   IssueDocument,
   IssueLabel,
+  SummarizeIssueResponse,
   UpsertIssueDocument,
 } from "@paperclipai/shared";
 import { api } from "./client";
@@ -62,6 +63,8 @@ export const issuesApi = {
         ...(interrupt === undefined ? {} : { interrupt }),
       },
     ),
+  summarize: (companyId: string, issueId: string) =>
+    api.post<SummarizeIssueResponse>(`/companies/${companyId}/issues/${issueId}/summarize`, {}),
   listDocuments: (id: string) => api.get<IssueDocument[]>(`/issues/${id}/documents`),
   getDocument: (id: string, key: string) => api.get<IssueDocument>(`/issues/${id}/documents/${encodeURIComponent(key)}`),
   upsertDocument: (id: string, key: string, data: UpsertIssueDocument) =>

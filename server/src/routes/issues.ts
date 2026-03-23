@@ -1,6 +1,9 @@
 import { Router, type Request, type Response } from "express";
 import multer from "multer";
+import { randomUUID } from "node:crypto";
 import type { Db } from "@paperclipai/db";
+import { projectWorkspaces } from "@paperclipai/db";
+import { and, desc, eq } from "drizzle-orm";
 import {
   addIssueCommentSchema,
   createIssueAttachmentMetadataSchema,
@@ -30,6 +33,8 @@ import { forbidden, HttpError, unauthorized } from "../errors.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 import { shouldWakeAssigneeOnCheckout } from "./issues-checkout-wakeup.js";
 import { isAllowedContentType, MAX_ATTACHMENT_BYTES } from "../attachment-types.js";
+import { getServerAdapter } from "../adapters/index.js";
+import { resolveDefaultAgentWorkspaceDir } from "../home-paths.js";
 
 const MAX_ISSUE_COMMENT_LIMIT = 500;
 
@@ -233,6 +238,128 @@ export function issueRoutes(db: Db, storage: StorageService) {
       q: req.query.q as string | undefined,
     });
     res.json(result);
+  });
+
+  router.post("/companies/:companyId/issues/:issueId/summarize", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    const issueId = req.params.issueId as string;
+    assertCompanyAccess(req, companyId);
+    if (req.actor.type !== "board") {
+      res.status(403).json({ error: "Board authentication required" });
+      return;
+    }
+
+    const issue = await svc.getById(issueId);
+    if (!issue) {
+      res.status(404).json({ error: "Issue not found" });
+      return;
+    }
+    if (issue.companyId !== companyId) {
+      res.status(422).json({ error: "Issue does not belong to company" });
+      return;
+    }
+
+    const companyAgents = await agentsSvc.list(companyId);
+    const cursorAgents = companyAgents.filter(
+      (agent) =>
+        agent.adapterType === "cursor" &&
+        agent.status !== "paused" &&
+        agent.status !== "pending_approval" &&
+        agent.status !== "terminated",
+    );
+    const cursorAgent =
+      (issue.assigneeAgentId
+        ? cursorAgents.find((a) => a.id === issue.assigneeAgentId) ?? null
+        : null) ?? cursorAgents[0] ?? null;
+
+    if (!cursorAgent) {
+      res.status(422).json({ error: "No available cursor agent for summarize" });
+      return;
+    }
+
+    const primaryWorkspace = issue.projectId
+      ? await db
+          .select({ cwd: projectWorkspaces.cwd })
+          .from(projectWorkspaces)
+          .where(
+            and(
+              eq(projectWorkspaces.companyId, companyId),
+              eq(projectWorkspaces.projectId, issue.projectId),
+            ),
+          )
+          .orderBy(desc(projectWorkspaces.isPrimary), desc(projectWorkspaces.updatedAt))
+          .limit(1)
+          .then((rows) => rows[0] ?? null)
+      : null;
+
+    const cwd = primaryWorkspace?.cwd ?? resolveDefaultAgentWorkspaceDir(cursorAgent.id);
+
+    // Keep summarize output short and directly usable as sub-issue context.
+    const comments = await svc.listComments(issue.id, { order: "desc", limit: 20 });
+    const commentBlock = comments.length
+      ? comments
+          .slice(0, 20)
+          .map((c) => `- ${c.createdAt}: ${c.body}`)
+          .join("\n")
+      : "(无评论)";
+    const prompt = [
+      "/compress",
+      "",
+      "请将以下父任务压缩总结为「父任务背景」，输出中文，要求：",
+      "- 只输出一段可直接粘贴到子任务里的总结（不要解释你的过程）",
+      "- 覆盖：在做什么、当前状态/进展、关键约束/上下文、为什么要拆出子任务",
+      "- 控制在 10-20 行内，必要时用项目符号",
+      "",
+      `父任务标题：${issue.title}`,
+      "",
+      "父任务描述：",
+      issue.description ?? "(无描述)",
+      "",
+      "最近评论（最多 20 条，倒序）：",
+      commentBlock,
+      "",
+    ].join("\n");
+
+    const cursorAdapter = getServerAdapter("cursor");
+    const runId = randomUUID();
+
+    const adapterResult = await cursorAdapter.execute({
+      runId,
+      agent: cursorAgent as any,
+      runtime: {
+        stateJson: {},
+        sessionId: null,
+        sessionDisplayId: null,
+        sessionParamsJson: null,
+      } as any,
+      config: {
+        ...(cursorAgent.adapterConfig as Record<string, unknown> | null | undefined),
+        cwd,
+        promptTemplate: prompt,
+        mode: "ask",
+        timeoutSec: 60,
+      },
+      context: {},
+      onLog: async () => undefined,
+      onMeta: async () => undefined,
+    });
+
+    if (adapterResult.timedOut) {
+      res.status(504).json({ error: adapterResult.errorMessage || "Summarize timed out" });
+      return;
+    }
+    if ((adapterResult.exitCode ?? 0) !== 0 || adapterResult.errorMessage) {
+      res.status(502).json({ error: adapterResult.errorMessage || "Summarize failed" });
+      return;
+    }
+
+    const summary = typeof adapterResult.summary === "string" ? adapterResult.summary.trim() : "";
+    if (!summary) {
+      res.status(502).json({ error: "Summarize produced no output" });
+      return;
+    }
+
+    res.json({ summary });
   });
 
   router.get("/companies/:companyId/labels", async (req, res) => {

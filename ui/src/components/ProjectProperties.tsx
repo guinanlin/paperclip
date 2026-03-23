@@ -1,15 +1,17 @@
 import { useState } from "react";
 import { Link } from "@/lib/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Project } from "@paperclipai/shared";
+import type { Project, ProjectTeamMember } from "@paperclipai/shared";
 import { StatusBadge } from "./StatusBadge";
 import { cn, formatDate } from "../lib/utils";
+import { agentsApi } from "../api/agents";
 import { goalsApi } from "../api/goals";
 import { projectsApi } from "../api/projects";
 import { useCompany } from "../context/CompanyContext";
 import { queryKeys } from "../lib/queryKeys";
 import { statusBadge, statusBadgeDefault } from "../lib/status-colors";
 import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -112,6 +114,268 @@ function PropertyRow({
       <div className={cn("min-w-0 flex-1", alignStart ? "pt-0.5" : "flex items-center gap-1.5", valueClassName)}>
         {children}
       </div>
+    </div>
+  );
+}
+
+function ProjectTeamSection({
+  project,
+  onInvalidate,
+}: {
+  project: Project;
+  onInvalidate: () => void;
+}) {
+  const { selectedCompanyId } = useCompany();
+  const queryClient = useQueryClient();
+  const teamMembers = project.teamMembers ?? [];
+  const [addOpen, setAddOpen] = useState(false);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [newRole, setNewRole] = useState("");
+  const [newDescription, setNewDescription] = useState("");
+  const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
+  const [editRole, setEditRole] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+
+  const { data: agents = [] } = useQuery({
+    queryKey: queryKeys.agents.list(selectedCompanyId!),
+    queryFn: () => agentsApi.list(selectedCompanyId!),
+    enabled: !!selectedCompanyId,
+  });
+
+  const addMember = useMutation({
+    mutationFn: (data: { agentId: string; role?: string | null; description?: string | null }) =>
+      projectsApi.addTeamMember(project.id, data, selectedCompanyId ?? undefined),
+    onSuccess: () => {
+      setAddOpen(false);
+      setSelectedAgentId(null);
+      setNewRole("");
+      setNewDescription("");
+      onInvalidate();
+    },
+  });
+
+  const updateMember = useMutation({
+    mutationFn: ({
+      memberId,
+      data,
+    }: {
+      memberId: string;
+      data: { role?: string | null; description?: string | null };
+    }) =>
+      projectsApi.updateTeamMember(project.id, memberId, data, selectedCompanyId ?? undefined),
+    onSuccess: () => {
+      setEditingMemberId(null);
+      setEditRole("");
+      setEditDescription("");
+      onInvalidate();
+    },
+  });
+
+  const removeMember = useMutation({
+    mutationFn: (memberId: string) =>
+      projectsApi.removeTeamMember(project.id, memberId, selectedCompanyId ?? undefined),
+    onSuccess: onInvalidate,
+  });
+
+  const existingAgentIds = new Set(teamMembers.map((m) => m.agentId));
+  const availableAgents = agents.filter((a) => !existingAgentIds.has(a.id));
+
+  const startEdit = (m: ProjectTeamMember) => {
+    setEditingMemberId(m.id);
+    setEditRole(m.role ?? "");
+    setEditDescription(m.description ?? "");
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <span>Team</span>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-border text-[10px] text-muted-foreground hover:text-foreground"
+              aria-label="Team help"
+            >
+              ?
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top">
+            Project team members are agents from this company. Add members and optionally set their role or description for this project.
+          </TooltipContent>
+        </Tooltip>
+      </div>
+      {teamMembers.length === 0 ? (
+        <p className="rounded-md border border-dashed border-border px-3 py-2 text-sm text-muted-foreground">
+          No team members configured.
+        </p>
+      ) : (
+        <div className="space-y-1">
+          {teamMembers.map((member) => (
+            <div
+              key={member.id}
+              className="flex flex-wrap items-start justify-between gap-2 rounded-md border border-border px-2 py-1.5"
+            >
+              <div className="min-w-0 flex-1 space-y-0.5">
+                <div className="flex items-center gap-2">
+                  <Link
+                    to={selectedCompanyId ? `/${selectedCompanyId}/agents/${member.agentId}` : `/agents/${member.agentId}`}
+                    className="text-sm font-medium hover:underline truncate"
+                  >
+                    {member.agent?.name ?? member.agentId.slice(0, 8)}
+                  </Link>
+                  {member.agent?.role && (
+                    <span className="text-[11px] text-muted-foreground">({member.agent.role})</span>
+                  )}
+                </div>
+                {editingMemberId === member.id ? (
+                  <div className="space-y-1.5 pt-1">
+                    <input
+                      className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs outline-none"
+                      value={editRole}
+                      onChange={(e) => setEditRole(e.target.value)}
+                      placeholder="Role in this project"
+                    />
+                    <input
+                      className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs outline-none"
+                      value={editDescription}
+                      onChange={(e) => setEditDescription(e.target.value)}
+                      placeholder="Description"
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="xs"
+                        className="h-6 px-2"
+                        disabled={updateMember.isPending}
+                        onClick={() =>
+                          updateMember.mutate({
+                            memberId: member.id,
+                            data: { role: editRole.trim() || null, description: editDescription.trim() || null },
+                          })
+                        }
+                      >
+                        Save
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        className="h-6 px-2"
+                        onClick={() => {
+                          setEditingMemberId(null);
+                          setEditRole("");
+                          setEditDescription("");
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {(member.role || member.description) && (
+                      <div className="text-[11px] text-muted-foreground space-y-0.5">
+                        {member.role && <div>{member.role}</div>}
+                        {member.description && <div>{member.description}</div>}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+              {editingMemberId !== member.id && (
+                <div className="flex items-center gap-1 shrink-0">
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={() => startEdit(member)}
+                    aria-label="Edit member"
+                  >
+                    <span className="text-xs">Edit</span>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={() => {
+                      if (window.confirm("Remove this agent from the project team?")) {
+                        removeMember.mutate(member.id);
+                      }
+                    }}
+                    aria-label="Remove member"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      <Popover open={addOpen} onOpenChange={setAddOpen}>
+        <PopoverTrigger asChild>
+          <Button variant="outline" size="xs" className="h-7 px-2.5">
+            <Plus className="h-3 w-3 mr-1" />
+            Add team member
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-72 p-2" align="start">
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-muted-foreground">Agent</label>
+            <select
+              className="w-full rounded border border-border bg-transparent px-2 py-1.5 text-sm outline-none"
+              value={selectedAgentId ?? ""}
+              onChange={(e) => setSelectedAgentId(e.target.value || null)}
+            >
+              <option value="">Select an agent</option>
+              {availableAgents.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name} {a.role ? `(${a.role})` : ""}
+                </option>
+              ))}
+            </select>
+            <label className="text-xs font-medium text-muted-foreground block">Role (optional)</label>
+            <input
+              className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs outline-none"
+              value={newRole}
+              onChange={(e) => setNewRole(e.target.value)}
+              placeholder="Role in this project"
+            />
+            <label className="text-xs font-medium text-muted-foreground block">Description (optional)</label>
+            <input
+              className="w-full rounded border border-border bg-transparent px-2 py-1 text-xs outline-none"
+              value={newDescription}
+              onChange={(e) => setNewDescription(e.target.value)}
+              placeholder="Description"
+            />
+            <div className="flex gap-2 pt-1">
+              <Button
+                variant="outline"
+                size="xs"
+                className="h-6 px-2"
+                disabled={!selectedAgentId || addMember.isPending}
+                onClick={() => {
+                  if (selectedAgentId) {
+                    addMember.mutate({
+                      agentId: selectedAgentId,
+                      role: newRole.trim() || null,
+                      description: newDescription.trim() || null,
+                    });
+                  }
+                }}
+              >
+                Add
+              </Button>
+              <Button variant="ghost" size="xs" className="h-6 px-2" onClick={() => setAddOpen(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+          {addMember.isError && (
+            <p className="text-xs text-destructive mt-1">
+              {(addMember.error as Error)?.message ?? "Failed to add team member."}
+            </p>
+          )}
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }
@@ -492,7 +756,12 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
 
       <Separator className="my-4" />
 
-      <div className="space-y-1 py-4">
+      <Tabs defaultValue="workspace" className="mt-4">
+        <TabsList className="mb-2">
+          <TabsTrigger value="workspace">Workspace</TabsTrigger>
+          <TabsTrigger value="team">Team</TabsTrigger>
+        </TabsList>
+        <TabsContent value="workspace" className="space-y-1 py-4 mt-0">
         <div className="space-y-2">
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <span>Workspaces</span>
@@ -953,7 +1222,11 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
           </>
         )}
 
-      </div>
+        </TabsContent>
+        <TabsContent value="team" className="space-y-1 py-4 mt-0">
+          <ProjectTeamSection project={project} onInvalidate={invalidateProject} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

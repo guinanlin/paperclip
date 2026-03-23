@@ -90,9 +90,9 @@ describe("adapter model listing", () => {
 
     expect(runner).toHaveBeenCalledTimes(1);
     expect(first).toEqual(second);
-    expect(first.some((model) => model.id === "auto")).toBe(true);
+    expect(first.some((model) => model.id === "auto")).toBe(false);
     expect(first.some((model) => model.id === "gpt-5.3-codex-high")).toBe(true);
-    expect(first.some((model) => model.id === "composer-1")).toBe(true);
+    expect(first.some((model) => model.id === "composer-1")).toBe(false);
   });
 
   it("returns no opencode models when opencode command is unavailable", async () => {

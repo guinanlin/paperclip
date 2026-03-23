@@ -675,6 +675,19 @@ export function AgentDetail() {
           onCancelActionChange={setCancelConfigAction}
           onSavingChange={setConfigSaving}
           updatePermissions={updatePermissions}
+          onConfigSaved={(updatedAgent) => {
+            const newRef = agentRouteRef(updatedAgent);
+            if (newRef !== routeAgentRef) {
+              const path = companyPrefix
+                ? `/${companyPrefix}/agents/${newRef}/configuration`
+                : `/agents/${newRef}/configuration`;
+              navigate(path, { replace: true });
+              queryClient.setQueryData(
+                [...queryKeys.agents.detail(newRef), lookupCompanyId ?? null],
+                updatedAgent,
+              );
+            }
+          }}
         />
       )}
 
@@ -948,6 +961,7 @@ function AgentConfigurePage({
   onCancelActionChange,
   onSavingChange,
   updatePermissions,
+  onConfigSaved,
 }: {
   agent: Agent;
   agentId: string;
@@ -958,6 +972,7 @@ function AgentConfigurePage({
   onCancelActionChange: (cancel: (() => void) | null) => void;
   onSavingChange: (saving: boolean) => void;
   updatePermissions: { mutate: (canCreate: boolean) => void; isPending: boolean };
+  onConfigSaved?: (updatedAgent: Agent) => void;
 }) {
   const queryClient = useQueryClient();
   const [revisionsOpen, setRevisionsOpen] = useState(false);
@@ -985,6 +1000,7 @@ function AgentConfigurePage({
         onCancelActionChange={onCancelActionChange}
         onSavingChange={onSavingChange}
         updatePermissions={updatePermissions}
+        onConfigSaved={onConfigSaved}
         companyId={companyId}
         allAgents={allAgents}
       />
@@ -1058,6 +1074,7 @@ function ConfigurationTab({
   onCancelActionChange,
   onSavingChange,
   updatePermissions,
+  onConfigSaved,
 }: {
   agent: Agent;
   companyId?: string;
@@ -1067,6 +1084,7 @@ function ConfigurationTab({
   onCancelActionChange: (cancel: (() => void) | null) => void;
   onSavingChange: (saving: boolean) => void;
   updatePermissions: { mutate: (canCreate: boolean) => void; isPending: boolean };
+  onConfigSaved?: (updatedAgent: Agent) => void;
 }) {
   const queryClient = useQueryClient();
   const [awaitingRefreshAfterSave, setAwaitingRefreshAfterSave] = useState(false);
@@ -1086,10 +1104,11 @@ function ConfigurationTab({
     onMutate: () => {
       setAwaitingRefreshAfterSave(true);
     },
-    onSuccess: () => {
+    onSuccess: (updatedAgent) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agent.id) });
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.detail(agent.urlKey) });
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.configRevisions(agent.id) });
+      onConfigSaved?.(updatedAgent);
     },
     onError: () => {
       setAwaitingRefreshAfterSave(false);

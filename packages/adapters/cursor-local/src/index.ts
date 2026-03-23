@@ -1,9 +1,8 @@
 export const type = "cursor";
 export const label = "Cursor CLI (local)";
-export const DEFAULT_CURSOR_LOCAL_MODEL = "auto";
+export const DEFAULT_CURSOR_LOCAL_MODEL = "";
 
 const CURSOR_FALLBACK_MODEL_IDS = [
-  "auto",
   "composer-1.5",
   "composer-1",
   "gpt-5.3-codex-low",
@@ -64,7 +63,7 @@ Core fields:
 - cwd (string, optional): default absolute working directory fallback for the agent process (created if missing when possible)
 - instructionsFilePath (string, optional): absolute path to a markdown instructions file prepended to the run prompt
 - promptTemplate (string, optional): run prompt template
-- model (string, optional): Cursor model id (for example auto or gpt-5.3-codex)
+- model (string, optional): Cursor model id (for example composer-2-fast)
 - mode (string, optional): Cursor execution mode passed as --mode (plan|ask). Leave unset for normal autonomous runs.
 - command (string, optional): defaults to "agent"
 - extraArgs (string[], optional): additional CLI args

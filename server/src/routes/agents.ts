@@ -423,7 +423,22 @@ export function agentRoutes(db: Db) {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
     const type = req.params.type as string;
-    const models = await listAdapterModels(type);
+
+    let models: { id: string; label: string }[];
+    if (type === "pi_local") {
+      const command =
+        typeof req.query.command === "string" ? req.query.command.trim() || undefined : undefined;
+      const cwd =
+        typeof req.query.cwd === "string" ? req.query.cwd.trim() || undefined : undefined;
+      try {
+        const { discoverPiModelsCached } = await import("@paperclipai/adapter-pi-local/server");
+        models = await discoverPiModelsCached({ command, cwd });
+      } catch {
+        models = [];
+      }
+    } else {
+      models = await listAdapterModels(type);
+    }
     res.json(models);
   });
 

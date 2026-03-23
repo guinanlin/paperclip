@@ -41,6 +41,8 @@ interface CommentThreadProps {
   imageUploadHandler?: (file: File) => Promise<string>;
   /** Callback to attach an image file to the parent issue (not inline in a comment). */
   onAttachImage?: (file: File) => Promise<void>;
+  /** Optional action slot rendered near Re-open/comment controls. */
+  actionSlot?: React.ReactNode;
   draftKey?: string;
   liveRunSlot?: React.ReactNode;
   enableReassign?: boolean;
@@ -264,6 +266,7 @@ export function CommentThread({
   agentMap,
   imageUploadHandler,
   onAttachImage,
+  actionSlot,
   draftKey,
   liveRunSlot,
   enableReassign = false,
@@ -436,6 +439,7 @@ export function CommentThread({
               </Button>
             </div>
           )}
+          {actionSlot}
           {isClosed && (
             <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
               <input

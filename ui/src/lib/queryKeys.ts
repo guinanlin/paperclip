@@ -13,8 +13,12 @@ export const queryKeys = {
     commandSets: (agentId: string, companyId?: string) =>
       ["agents", "command-sets", agentId, companyId ?? ""] as const,
     configRevisions: (agentId: string) => ["agents", "config-revisions", agentId] as const,
-    adapterModels: (companyId: string, adapterType: string) =>
-      ["agents", companyId, "adapter-models", adapterType] as const,
+    adapterModels: (
+      companyId: string,
+      adapterType: string,
+      piLocalConfig?: { command?: string; cwd?: string },
+    ) =>
+      ["agents", companyId, "adapter-models", adapterType, piLocalConfig ?? null] as const,
   },
   issues: {
     list: (companyId: string) => ["issues", companyId] as const,

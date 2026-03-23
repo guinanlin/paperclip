@@ -1,4 +1,10 @@
-import type { Project, ProjectWorkspace } from "@paperclipai/shared";
+import type {
+  CreateProjectTeamMember,
+  Project,
+  ProjectTeamMember,
+  ProjectWorkspace,
+  UpdateProjectTeamMember,
+} from "@paperclipai/shared";
 import { api } from "./client";
 
 function withCompanyScope(path: string, companyId?: string) {
@@ -29,5 +35,19 @@ export const projectsApi = {
     ),
   removeWorkspace: (projectId: string, workspaceId: string, companyId?: string) =>
     api.delete<ProjectWorkspace>(projectPath(projectId, companyId, `/workspaces/${encodeURIComponent(workspaceId)}`)),
+  addTeamMember: (projectId: string, data: CreateProjectTeamMember, companyId?: string) =>
+    api.post<ProjectTeamMember>(projectPath(projectId, companyId, "/team"), data),
+  updateTeamMember: (
+    projectId: string,
+    memberId: string,
+    data: UpdateProjectTeamMember,
+    companyId?: string,
+  ) =>
+    api.patch<ProjectTeamMember>(
+      projectPath(projectId, companyId, `/team/${encodeURIComponent(memberId)}`),
+      data,
+    ),
+  removeTeamMember: (projectId: string, memberId: string, companyId?: string) =>
+    api.delete<ProjectTeamMember>(projectPath(projectId, companyId, `/team/${encodeURIComponent(memberId)}`)),
   remove: (id: string, companyId?: string) => api.delete<Project>(projectPath(id, companyId)),
 };

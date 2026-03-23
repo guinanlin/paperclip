@@ -1,6 +1,14 @@
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
-import { projects, projectGoals, goals, projectWorkspaces, workspaceRuntimeServices } from "@paperclipai/db";
+import {
+  agents,
+  projects,
+  projectGoals,
+  goals,
+  projectTeamMembers,
+  projectWorkspaces,
+  workspaceRuntimeServices,
+} from "@paperclipai/db";
 import {
   PROJECT_COLORS,
   deriveProjectUrlKey,
@@ -8,6 +16,8 @@ import {
   normalizeProjectUrlKey,
   type ProjectExecutionWorkspacePolicy,
   type ProjectGoalRef,
+  type ProjectTeamMember,
+  type ProjectTeamMemberAgentRef,
   type ProjectWorkspace,
   type WorkspaceRuntimeService,
 } from "@paperclipai/shared";
@@ -35,6 +45,7 @@ interface ProjectWithGoals extends Omit<ProjectRow, "executionWorkspacePolicy"> 
   executionWorkspacePolicy: ProjectExecutionWorkspacePolicy | null;
   workspaces: ProjectWorkspace[];
   primaryWorkspace: ProjectWorkspace | null;
+  teamMembers: ProjectTeamMember[];
 }
 
 interface ProjectShortnameRow {
@@ -190,7 +201,76 @@ async function attachWorkspaces(db: Db, rows: ProjectWithGoals[]): Promise<Proje
       ...row,
       workspaces,
       primaryWorkspace: pickPrimaryWorkspace(projectWorkspaceRows, sharedRuntimeServicesByWorkspaceId),
+      teamMembers: [],
     };
+  });
+}
+
+type ProjectTeamMemberRow = typeof projectTeamMembers.$inferSelect;
+
+function toTeamMember(
+  row: ProjectTeamMemberRow,
+  agentRef: ProjectTeamMemberAgentRef | null,
+): ProjectTeamMember {
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    companyId: row.companyId,
+    agentId: row.agentId,
+    role: row.role ?? null,
+    description: row.description ?? null,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    ...(agentRef ? { agent: agentRef } : {}),
+  };
+}
+
+/** Batch-load team members for a set of projects (after attachWorkspaces). */
+async function attachTeamMembers(db: Db, rows: ProjectWithGoals[]): Promise<ProjectWithGoals[]> {
+  if (rows.length === 0) return [];
+
+  const projectIds = rows.map((r) => r.id);
+  const memberRows = await db
+    .select({
+      member: projectTeamMembers,
+      agentId: agents.id,
+      agentName: agents.name,
+      agentRole: agents.role,
+      agentTitle: agents.title,
+    })
+    .from(projectTeamMembers)
+    .leftJoin(agents, eq(projectTeamMembers.agentId, agents.id))
+    .where(inArray(projectTeamMembers.projectId, projectIds))
+    .orderBy(asc(projectTeamMembers.createdAt), asc(projectTeamMembers.id));
+
+  const map = new Map<
+    string,
+    Array<{ row: ProjectTeamMemberRow; agentRef: ProjectTeamMemberAgentRef | null }>
+  >();
+  for (const { member, agentId, agentName, agentRole, agentTitle } of memberRows) {
+    let arr = map.get(member.projectId);
+    if (!arr) {
+      arr = [];
+      map.set(member.projectId, arr);
+    }
+    const agentRef: ProjectTeamMemberAgentRef | null =
+      agentId && agentName != null && agentRole != null
+        ? {
+            id: agentId,
+            name: agentName,
+            role: agentRole,
+            title: agentTitle ?? null,
+          }
+        : null;
+    arr.push({ row: member, agentRef });
+  }
+
+  return rows.map((row) => {
+    const pairs = map.get(row.id) ?? [];
+    const teamMembers = pairs.map(({ row: memberRow, agentRef }) =>
+      toTeamMember(memberRow, agentRef),
+    );
+    return { ...row, teamMembers };
   });
 }
 
@@ -326,7 +406,8 @@ export function projectService(db: Db) {
     list: async (companyId: string): Promise<ProjectWithGoals[]> => {
       const rows = await db.select().from(projects).where(eq(projects.companyId, companyId));
       const withGoals = await attachGoals(db, rows);
-      return attachWorkspaces(db, withGoals);
+      const withWorkspaces = await attachWorkspaces(db, withGoals);
+      return attachTeamMembers(db, withWorkspaces);
     },
 
     listByIds: async (companyId: string, ids: string[]): Promise<ProjectWithGoals[]> => {
@@ -338,7 +419,8 @@ export function projectService(db: Db) {
         .where(and(eq(projects.companyId, companyId), inArray(projects.id, dedupedIds)));
       const withGoals = await attachGoals(db, rows);
       const withWorkspaces = await attachWorkspaces(db, withGoals);
-      const byId = new Map(withWorkspaces.map((project) => [project.id, project]));
+      const withTeam = await attachTeamMembers(db, withWorkspaces);
+      const byId = new Map(withTeam.map((project) => [project.id, project]));
       return dedupedIds.map((id) => byId.get(id)).filter((project): project is ProjectWithGoals => Boolean(project));
     },
 
@@ -351,7 +433,8 @@ export function projectService(db: Db) {
       if (!row) return null;
       const [withGoals] = await attachGoals(db, [row]);
       if (!withGoals) return null;
-      const [enriched] = await attachWorkspaces(db, [withGoals]);
+      const [withWorkspaces] = await attachWorkspaces(db, [withGoals]);
+      const [enriched] = await attachTeamMembers(db, withWorkspaces ? [withWorkspaces] : []);
       return enriched ?? null;
     },
 
@@ -390,7 +473,8 @@ export function projectService(db: Db) {
       }
 
       const [withGoals] = await attachGoals(db, [row]);
-      const [enriched] = withGoals ? await attachWorkspaces(db, [withGoals]) : [];
+      const [withWorkspaces] = withGoals ? await attachWorkspaces(db, [withGoals]) : [];
+      const [enriched] = withWorkspaces ? await attachTeamMembers(db, [withWorkspaces]) : [];
       return enriched!;
     },
 
@@ -443,7 +527,8 @@ export function projectService(db: Db) {
       }
 
       const [withGoals] = await attachGoals(db, [row]);
-      const [enriched] = withGoals ? await attachWorkspaces(db, [withGoals]) : [];
+      const [withWorkspaces] = withGoals ? await attachWorkspaces(db, [withGoals]) : [];
+      const [enriched] = withWorkspaces ? await attachTeamMembers(db, [withWorkspaces]) : [];
       return enriched ?? null;
     },
 
@@ -707,6 +792,154 @@ export function projectService(db: Db) {
       });
 
       return removed ? toWorkspace(removed) : null;
+    },
+
+    listTeamMembers: async (projectId: string): Promise<ProjectTeamMember[]> => {
+      const project = await db
+        .select({ id: projects.id, companyId: projects.companyId })
+        .from(projects)
+        .where(eq(projects.id, projectId))
+        .then((rows) => rows[0] ?? null);
+      if (!project) return [];
+
+      const rows = await db
+        .select({
+          member: projectTeamMembers,
+          agentId: agents.id,
+          agentName: agents.name,
+          agentRole: agents.role,
+          agentTitle: agents.title,
+        })
+        .from(projectTeamMembers)
+        .leftJoin(agents, eq(projectTeamMembers.agentId, agents.id))
+        .where(eq(projectTeamMembers.projectId, projectId))
+        .orderBy(asc(projectTeamMembers.createdAt), asc(projectTeamMembers.id));
+
+      return rows.map(({ member, agentId, agentName, agentRole, agentTitle }) => {
+        const agentRef: ProjectTeamMemberAgentRef | null =
+          agentId && agentName != null && agentRole != null
+            ? { id: agentId, name: agentName, role: agentRole, title: agentTitle ?? null }
+            : null;
+        return toTeamMember(member, agentRef);
+      });
+    },
+
+    addTeamMember: async (
+      projectId: string,
+      companyId: string,
+      data: { agentId: string; role?: string | null; description?: string | null },
+    ): Promise<ProjectTeamMember | null> => {
+      const project = await db
+        .select()
+        .from(projects)
+        .where(eq(projects.id, projectId))
+        .then((rows) => rows[0] ?? null);
+      if (!project || project.companyId !== companyId) return null;
+
+      const agent = await db
+        .select()
+        .from(agents)
+        .where(and(eq(agents.id, data.agentId), eq(agents.companyId, companyId)))
+        .then((rows) => rows[0] ?? null);
+      if (!agent) return null;
+
+      const existingMember = await db
+        .select({ id: projectTeamMembers.id })
+        .from(projectTeamMembers)
+        .where(
+          and(
+            eq(projectTeamMembers.projectId, projectId),
+            eq(projectTeamMembers.agentId, data.agentId),
+          ),
+        )
+        .then((rows) => rows[0] ?? null);
+      if (existingMember) return null;
+
+      const role = readNonEmptyString(data.role) ?? null;
+      const description = readNonEmptyString(data.description) ?? null;
+
+      const [inserted] = await db
+        .insert(projectTeamMembers)
+        .values({
+          companyId,
+          projectId,
+          agentId: data.agentId,
+          role,
+          description,
+        })
+        .returning();
+      if (!inserted) return null;
+
+      return toTeamMember(inserted, {
+        id: agent.id,
+        name: agent.name,
+        role: agent.role,
+        title: agent.title ?? null,
+      });
+    },
+
+    updateTeamMember: async (
+      projectId: string,
+      memberId: string,
+      data: { role?: string | null; description?: string | null },
+    ): Promise<ProjectTeamMember | null> => {
+      const existing = await db
+        .select()
+        .from(projectTeamMembers)
+        .where(
+          and(
+            eq(projectTeamMembers.id, memberId),
+            eq(projectTeamMembers.projectId, projectId),
+          ),
+        )
+        .then((rows) => rows[0] ?? null);
+      if (!existing) return null;
+
+      const patch: Partial<typeof projectTeamMembers.$inferInsert> = { updatedAt: new Date() };
+      if (data.role !== undefined) patch.role = readNonEmptyString(data.role) ?? null;
+      if (data.description !== undefined) patch.description = readNonEmptyString(data.description) ?? null;
+
+      const [updated] = await db
+        .update(projectTeamMembers)
+        .set(patch)
+        .where(eq(projectTeamMembers.id, memberId))
+        .returning();
+      if (!updated) return null;
+
+      const agent = await db
+        .select({ id: agents.id, name: agents.name, role: agents.role, title: agents.title })
+        .from(agents)
+        .where(eq(agents.id, updated.agentId))
+        .then((rows) => rows[0] ?? null);
+      const agentRef: ProjectTeamMemberAgentRef | null = agent
+        ? { id: agent.id, name: agent.name, role: agent.role, title: agent.title ?? null }
+        : null;
+      return toTeamMember(updated, agentRef);
+    },
+
+    removeTeamMember: async (
+      projectId: string,
+      memberId: string,
+    ): Promise<ProjectTeamMember | null> => {
+      const existing = await db
+        .select()
+        .from(projectTeamMembers)
+        .where(
+          and(
+            eq(projectTeamMembers.id, memberId),
+            eq(projectTeamMembers.projectId, projectId),
+          ),
+        )
+        .then((rows) => rows[0] ?? null);
+      if (!existing) return null;
+
+      const [removed] = await db
+        .delete(projectTeamMembers)
+        .where(eq(projectTeamMembers.id, memberId))
+        .returning();
+      if (!removed) return null;
+
+      return toTeamMember(removed, null);
     },
 
     resolveByReference: async (companyId: string, reference: string) => {

@@ -244,6 +244,12 @@ describe("inbox helpers", () => {
     expect(loadLastInboxTab()).toBe("all");
   });
 
+  it("persists actionable tab", () => {
+    localStorage.clear();
+    saveLastInboxTab("actionable");
+    expect(loadLastInboxTab()).toBe("actionable");
+  });
+
   it("maps legacy new-tab storage to recent", () => {
     localStorage.setItem("paperclip:inbox:last-tab", "new");
     expect(loadLastInboxTab()).toBe("recent");

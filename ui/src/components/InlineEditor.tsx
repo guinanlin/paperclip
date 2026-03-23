@@ -1,7 +1,12 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, forwardRef, useImperativeHandle } from "react";
 import { cn } from "../lib/utils";
 import { MarkdownEditor, type MarkdownEditorRef, type MentionOption } from "./MarkdownEditor";
 import { useAutosaveIndicator } from "../hooks/useAutosaveIndicator";
+
+export interface InlineEditorRef {
+  /** Enter edit mode (no-op when readOnly). */
+  startEditing: () => void;
+}
 
 interface InlineEditorProps {
   value: string;
@@ -12,6 +17,8 @@ interface InlineEditorProps {
   multiline?: boolean;
   imageUploadHandler?: (file: File) => Promise<string>;
   mentions?: MentionOption[];
+  /** When true, content is shown as static text and cannot be edited. */
+  readOnly?: boolean;
 }
 
 /** Shared padding so display and edit modes occupy the exact same box. */
@@ -19,18 +26,32 @@ const pad = "px-1 -mx-1";
 const markdownPad = "px-1";
 const AUTOSAVE_DEBOUNCE_MS = 900;
 
-export function InlineEditor({
-  value,
-  onSave,
-  as: Tag = "span",
-  className,
-  placeholder = "Click to edit...",
-  multiline = false,
-  imageUploadHandler,
-  mentions,
-}: InlineEditorProps) {
+export const InlineEditor = forwardRef<InlineEditorRef, InlineEditorProps>(function InlineEditor(
+  {
+    value,
+    onSave,
+    as: Tag = "span",
+    className,
+    placeholder = "Click to edit...",
+    multiline = false,
+    imageUploadHandler,
+    mentions,
+    readOnly = false,
+  },
+  ref,
+) {
   const [editing, setEditing] = useState(false);
   const [multilineFocused, setMultilineFocused] = useState(false);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      startEditing() {
+        if (!readOnly) setEditing(true);
+      },
+    }),
+    [readOnly],
+  );
   const [draft, setDraft] = useState(value);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const markdownRef = useRef<MarkdownEditorRef>(null);
@@ -137,6 +158,23 @@ export function InlineEditor({
       }
     };
   }, [autosaveState, commit, draft, markDirty, multiline, multilineFocused, reset, runSave, value]);
+
+  if (readOnly) {
+    const DisplayTag = value && multiline ? "div" : Tag;
+    return (
+      <DisplayTag
+        className={cn(
+          pad,
+          markdownPad,
+          !value && "text-muted-foreground italic",
+          className,
+          multiline && "whitespace-pre-wrap",
+        )}
+      >
+        {value || placeholder}
+      </DisplayTag>
+    );
+  }
 
   if (multiline) {
     return (
@@ -245,4 +283,4 @@ export function InlineEditor({
       {value || placeholder}
     </DisplayTag>
   );
-}
+});

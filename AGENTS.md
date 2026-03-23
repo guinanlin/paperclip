@@ -1,3 +1,8 @@
+---
+description: 
+alwaysApply: true
+---
+
 # AGENTS.md
 
 Guidance for human and AI contributors working in this repository.
@@ -27,6 +32,7 @@ Before making changes, read in this order:
 - `packages/db/`: Drizzle schema, migrations, DB clients
 - `packages/shared/`: shared types, constants, validators, API path constants
 - `doc/`: operational and product docs
+- **Pi Local 对接标准**：`doc/PI_LOCAL_INTEGRATION_STANDARD.md` — 外部 CLI/Agent 以 pi_local 接入时的官方契约与配置标准。
 
 ## 4. Dev Setup (Auto DB)
 

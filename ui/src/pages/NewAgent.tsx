@@ -49,7 +49,7 @@ function createValuesForAdapterType(
     nextValues.model = DEFAULT_GEMINI_LOCAL_MODEL;
   } else if (adapterType === "cursor") {
     nextValues.model = DEFAULT_CURSOR_LOCAL_MODEL;
-  } else if (adapterType === "opencode_local") {
+  } else if (adapterType === "opencode_local" || adapterType === "pi_local") {
     nextValues.model = "";
   }
   return nextValues;
@@ -78,6 +78,11 @@ export function NewAgent() {
     enabled: !!selectedCompanyId,
   });
 
+  const piLocalConfig =
+    configValues.adapterType === "pi_local"
+      ? { command: String(configValues.command ?? ""), cwd: String(configValues.cwd ?? "") }
+      : undefined;
+
   const {
     data: adapterModels,
     error: adapterModelsError,
@@ -85,9 +90,18 @@ export function NewAgent() {
     isFetching: adapterModelsFetching,
   } = useQuery({
     queryKey: selectedCompanyId
-      ? queryKeys.agents.adapterModels(selectedCompanyId, configValues.adapterType)
-      : ["agents", "none", "adapter-models", configValues.adapterType],
-    queryFn: () => agentsApi.adapterModels(selectedCompanyId!, configValues.adapterType),
+      ? queryKeys.agents.adapterModels(
+          selectedCompanyId,
+          configValues.adapterType,
+          piLocalConfig,
+        )
+      : ["agents", "none", "adapter-models", configValues.adapterType, piLocalConfig ?? null],
+    queryFn: () =>
+      agentsApi.adapterModels(
+        selectedCompanyId!,
+        configValues.adapterType,
+        piLocalConfig,
+      ),
     enabled: Boolean(selectedCompanyId),
   });
 

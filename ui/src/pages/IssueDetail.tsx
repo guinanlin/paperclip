@@ -8,13 +8,15 @@ import { agentsApi } from "../api/agents";
 import { authApi } from "../api/auth";
 import { projectsApi } from "../api/projects";
 import { useCompany } from "../context/CompanyContext";
+import { useDialog } from "../context/DialogContext";
 import { usePanel } from "../context/PanelContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
+import { useToast } from "../context/ToastContext";
 import { queryKeys } from "../lib/queryKeys";
 import { readIssueDetailBreadcrumb } from "../lib/issueDetailBreadcrumb";
 import { useProjectOrder } from "../hooks/useProjectOrder";
 import { relativeTime, cn, formatTokens } from "../lib/utils";
-import { InlineEditor } from "../components/InlineEditor";
+import { InlineEditor, type InlineEditorRef } from "../components/InlineEditor";
 import { CommentThread } from "../components/CommentThread";
 import { IssueDocumentsSection } from "../components/IssueDocumentsSection";
 import { IssueProperties } from "../components/IssueProperties";
@@ -44,6 +46,8 @@ import {
   MessageSquare,
   MoreHorizontal,
   Paperclip,
+  Pencil,
+  Plus,
   SlidersHorizontal,
   Trash2,
 } from "lucide-react";
@@ -193,12 +197,14 @@ export function IssueDetail() {
   const { selectedCompanyId } = useCompany();
   const { openPanel, closePanel, panelVisible, setPanelVisible } = usePanel();
   const { setBreadcrumbs } = useBreadcrumbs();
+  const { pushToast } = useToast();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
   const [mobilePropsOpen, setMobilePropsOpen] = useState(false);
   const [detailTab, setDetailTab] = useState("comments");
+  const [subIssueSummarizing, setSubIssueSummarizing] = useState(false);
   const [secondaryOpen, setSecondaryOpen] = useState({
     approvals: false,
     cost: false,
@@ -207,7 +213,9 @@ export function IssueDetail() {
   const [attachmentDragActive, setAttachmentDragActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const lastMarkedReadIssueIdRef = useRef<string | null>(null);
+  const titleEditorRef = useRef<InlineEditorRef>(null);
 
+  const { openNewIssue } = useDialog();
   const { data: issue, isLoading, error } = useQuery({
     queryKey: queryKeys.issues.detail(issueId!),
     queryFn: () => issuesApi.get(issueId!),
@@ -771,6 +779,18 @@ export function IssueDetail() {
                 </Button>
               </PopoverTrigger>
             <PopoverContent className="w-44 p-1" align="end">
+              {issue.assigneeAgentId == null && issue.assigneeUserId == null && (
+                <button
+                  className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-foreground"
+                  onClick={() => {
+                    titleEditorRef.current?.startEditing();
+                    setMoreOpen(false);
+                  }}
+                >
+                  <Pencil className="h-3 w-3" />
+                  Edit current issue
+                </button>
+              )}
               <button
                 className="flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded hover:bg-accent/50 text-destructive"
                 onClick={() => {
@@ -790,10 +810,12 @@ export function IssueDetail() {
         </div>
 
         <InlineEditor
+          ref={titleEditorRef}
           value={issue.title}
           onSave={(title) => updateIssue.mutateAsync({ title })}
           as="h2"
           className="text-xl font-bold"
+          readOnly={!(issue.assigneeAgentId == null && issue.assigneeUserId == null)}
         />
 
         <InlineEditor
@@ -804,6 +826,7 @@ export function IssueDetail() {
           placeholder="Add a description..."
           multiline
           mentions={mentionOptions}
+          readOnly={!(issue.assigneeAgentId == null && issue.assigneeUserId == null)}
           imageUploadHandler={async (file) => {
             const attachment = await uploadAttachment.mutateAsync(file);
             return attachment.contentPath;
@@ -969,6 +992,41 @@ export function IssueDetail() {
             reassignOptions={commentReassignOptions}
             currentAssigneeValue={currentAssigneeValue}
             mentions={mentionOptions}
+            actionSlot={
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                disabled={subIssueSummarizing}
+                onClick={async () => {
+                  if (subIssueSummarizing) return;
+                  setSubIssueSummarizing(true);
+                  try {
+                    const result = await issuesApi.summarize(issue.companyId, issue.id);
+                    openNewIssue({
+                      parentId: issue.id,
+                      projectId: issue.projectId ?? undefined,
+                      parentContext: result.summary,
+                    });
+                  } catch (err) {
+                    pushToast({
+                      title: "Summarize 失败",
+                      body: err instanceof Error ? err.message : "Summarize failed. You can paste manually.",
+                      tone: "error",
+                    });
+                    openNewIssue({
+                      parentId: issue.id,
+                      projectId: issue.projectId ?? undefined,
+                    });
+                  } finally {
+                    setSubIssueSummarizing(false);
+                  }
+                }}
+              >
+                <Plus className="h-3.5 w-3.5" />
+                {subIssueSummarizing ? "Summarizing…" : "New sub issue"}
+              </Button>
+            }
             onAdd={async (body, reopen, reassignment) => {
               if (reassignment) {
                 await addCommentAndReassign.mutateAsync({ body, reopen, reassignment });

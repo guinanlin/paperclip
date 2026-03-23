@@ -155,10 +155,20 @@ export const agentsApi = {
     api.get<AgentTaskSession[]>(agentPath(id, companyId, "/task-sessions")),
   resetSession: (id: string, taskKey?: string | null, companyId?: string) =>
     api.post<void>(agentPath(id, companyId, "/runtime-state/reset-session"), { taskKey: taskKey ?? null }),
-  adapterModels: (companyId: string, type: string) =>
-    api.get<AdapterModel[]>(
-      `/companies/${encodeURIComponent(companyId)}/adapters/${encodeURIComponent(type)}/models`,
-    ),
+  adapterModels: (
+    companyId: string,
+    type: string,
+    options?: { command?: string; cwd?: string },
+  ) => {
+    const path = `/companies/${encodeURIComponent(companyId)}/adapters/${encodeURIComponent(type)}/models`;
+    const params = new URLSearchParams();
+    if (type === "pi_local" && options) {
+      if (options.command) params.set("command", options.command);
+      if (options.cwd) params.set("cwd", options.cwd);
+    }
+    const query = params.toString();
+    return api.get<AdapterModel[]>(query ? `${path}?${query}` : path);
+  },
   testEnvironment: (
     companyId: string,
     type: string,

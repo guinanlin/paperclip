@@ -10,7 +10,13 @@ export type {
   AdapterEnvironmentTestResult,
 } from "./agent.js";
 export type { AssetImage } from "./asset.js";
-export type { Project, ProjectGoalRef, ProjectWorkspace } from "./project.js";
+export type {
+  Project,
+  ProjectGoalRef,
+  ProjectTeamMember,
+  ProjectTeamMemberAgentRef,
+  ProjectWorkspace,
+} from "./project.js";
 export type {
   WorkspaceRuntimeService,
   ExecutionWorkspaceStrategyType,

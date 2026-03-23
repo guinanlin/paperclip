@@ -27,9 +27,9 @@ function parseModelsOutput(stdout: string): AdapterModel[] {
     const line = lines[i].trim();
     if (!line) continue;
     
-    // Parse format: "provider   model   context  max-out  thinking  images"
-    // Split by 2+ spaces to handle the columnar format
-    const parts = line.split(/\s{2,}/);
+    // Parse format: "provider   model   ..." or "provider\tmodel" (tab or spaces)
+    // Split by one or more whitespace so both tab and space-separated output work
+    const parts = line.split(/\s+/);
     if (parts.length < 2) continue;
     
     const provider = parts[0].trim();

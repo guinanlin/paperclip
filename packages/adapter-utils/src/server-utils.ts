@@ -170,6 +170,22 @@ async function pathExists(candidate: string) {
   }
 }
 
+/**
+ * When command is "node /path/to/script.mjs", split into executable and leading args
+ * so we can spawn(executable, [...leadingArgs, ...args]). Single-token command returns no leading args.
+ */
+function parseCommandAndArgs(command: string): { executable: string; leadingArgs: string[] } {
+  const trimmed = command.trim();
+  const parts = trimmed.split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) {
+    return { executable: trimmed || command, leadingArgs: [] };
+  }
+  return {
+    executable: parts[0]!,
+    leadingArgs: parts.slice(1),
+  };
+}
+
 async function resolveCommandPath(command: string, cwd: string, env: NodeJS.ProcessEnv): Promise<string | null> {
   const hasPathSeparator = command.includes("/") || command.includes("\\");
   if (hasPathSeparator) {
@@ -210,23 +226,25 @@ async function resolveSpawnTarget(
   cwd: string,
   env: NodeJS.ProcessEnv,
 ): Promise<SpawnTarget> {
-  const resolved = await resolveCommandPath(command, cwd, env);
-  const executable = resolved ?? command;
+  const { executable: executableToken, leadingArgs } = parseCommandAndArgs(command);
+  const resolved = await resolveCommandPath(executableToken, cwd, env);
+  const executable = resolved ?? executableToken;
+  const mergedArgs = leadingArgs.length > 0 ? [...leadingArgs, ...args] : args;
 
   if (process.platform !== "win32") {
-    return { command: executable, args };
+    return { command: executable, args: mergedArgs };
   }
 
   if (/\.(cmd|bat)$/i.test(executable)) {
     const shell = env.ComSpec || process.env.ComSpec || "cmd.exe";
-    const commandLine = [quoteForCmd(executable), ...args.map(quoteForCmd)].join(" ");
+    const commandLine = [quoteForCmd(executable), ...mergedArgs.map(quoteForCmd)].join(" ");
     return {
       command: shell,
       args: ["/d", "/s", "/c", commandLine],
     };
   }
 
-  return { command: executable, args };
+  return { command: executable, args: mergedArgs };
 }
 
 export function ensurePathInEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -403,13 +421,14 @@ export async function removeMaintainerOnlySkillSymlinks(
 }
 
 export async function ensureCommandResolvable(command: string, cwd: string, env: NodeJS.ProcessEnv) {
-  const resolved = await resolveCommandPath(command, cwd, env);
+  const { executable } = parseCommandAndArgs(command);
+  const resolved = await resolveCommandPath(executable, cwd, env);
   if (resolved) return;
-  if (command.includes("/") || command.includes("\\")) {
-    const absolute = path.isAbsolute(command) ? command : path.resolve(cwd, command);
+  if (executable.includes("/") || executable.includes("\\")) {
+    const absolute = path.isAbsolute(executable) ? executable : path.resolve(cwd, executable);
     throw new Error(`Command is not executable: "${command}" (resolved: "${absolute}")`);
   }
-  throw new Error(`Command not found in PATH: "${command}"`);
+  throw new Error(`Command not found in PATH: "${executable}" (full command: "${command}")`);
 }
 
 export async function runChildProcess(

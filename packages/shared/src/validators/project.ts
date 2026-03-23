@@ -57,6 +57,21 @@ export const updateProjectWorkspaceSchema = z.object({
 
 export type UpdateProjectWorkspace = z.infer<typeof updateProjectWorkspaceSchema>;
 
+export const createProjectTeamMemberSchema = z.object({
+  agentId: z.string().uuid(),
+  role: z.string().optional().nullable(),
+  description: z.string().optional().nullable(),
+});
+
+export type CreateProjectTeamMember = z.infer<typeof createProjectTeamMemberSchema>;
+
+export const updateProjectTeamMemberSchema = z.object({
+  role: z.string().optional().nullable(),
+  description: z.string().optional().nullable(),
+});
+
+export type UpdateProjectTeamMember = z.infer<typeof updateProjectTeamMemberSchema>;
+
 const projectFields = {
   /** @deprecated Use goalIds instead */
   goalId: z.string().uuid().optional().nullable(),

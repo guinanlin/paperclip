@@ -6,6 +6,27 @@ export interface ProjectGoalRef {
   title: string;
 }
 
+/** Agent ref for display when project team member is hydrated. */
+export interface ProjectTeamMemberAgentRef {
+  id: string;
+  name: string;
+  role: string;
+  title: string | null;
+}
+
+export interface ProjectTeamMember {
+  id: string;
+  projectId: string;
+  companyId: string;
+  agentId: string;
+  role: string | null;
+  description: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  /** Present when hydrated from API (e.g. project detail). */
+  agent?: ProjectTeamMemberAgentRef;
+}
+
 export interface ProjectWorkspace {
   id: string;
   companyId: string;
@@ -38,6 +59,7 @@ export interface Project {
   executionWorkspacePolicy: ProjectExecutionWorkspacePolicy | null;
   workspaces: ProjectWorkspace[];
   primaryWorkspace: ProjectWorkspace | null;
+  teamMembers?: ProjectTeamMember[];
   archivedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
