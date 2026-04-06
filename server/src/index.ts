@@ -25,7 +25,11 @@ import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { logger } from "./middleware/logger.js";
 import { setupLiveEventsWebSocketServer } from "./realtime/live-events-ws.js";
-import { heartbeatService, reconcilePersistedRuntimeServicesOnStartup } from "./services/index.js";
+import {
+  heartbeatService,
+  reconcilePersistedRuntimeServicesOnStartup,
+  routineService,
+} from "./services/index.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
@@ -386,9 +390,22 @@ export async function startServer(): Promise<StartedServer> {
   }
   
   if (config.deploymentMode === "local_trusted" && !isLoopbackHost(config.host)) {
-    throw new Error(
-      `local_trusted mode requires loopback host binding (received: ${config.host}). ` +
-        "Use authenticated mode for non-loopback deployments.",
+    const allowNonLoopbackBind =
+      process.env.PAPERCLIP_LOCAL_TRUSTED_ALLOW_NON_LOOPBACK_BIND === "true";
+    if (!allowNonLoopbackBind) {
+      throw new Error(
+        `local_trusted mode requires loopback host binding (received: ${config.host}). ` +
+          "Use authenticated mode for non-loopback deployments, " +
+          "or set PAPERCLIP_LOCAL_TRUSTED_ALLOW_NON_LOOPBACK_BIND=true only if you understand the risk (e.g. Docker port publish).",
+      );
+    }
+    logger.warn(
+      {
+        host: config.host,
+        bind: `${config.host}:${config.port}`,
+      },
+      "PAPERCLIP_LOCAL_TRUSTED_ALLOW_NON_LOOPBACK_BIND: local_trusted is listening on a non-loopback address; " +
+        "anyone who can reach this port has full board control. Use only on trusted networks or with additional controls.",
     );
   }
   
@@ -513,7 +530,8 @@ export async function startServer(): Promise<StartedServer> {
   
   if (config.heartbeatSchedulerEnabled) {
     const heartbeat = heartbeatService(db as any);
-  
+    const routines = routineService(db as any);
+
     // Reap orphaned running runs at startup while in-memory execution state is empty,
     // then resume any persisted queued runs that were waiting on the previous process.
     void heartbeat
@@ -533,7 +551,18 @@ export async function startServer(): Promise<StartedServer> {
         .catch((err) => {
           logger.error({ err }, "heartbeat timer tick failed");
         });
-  
+
+      void routines
+        .tickScheduledTriggers(new Date())
+        .then((result) => {
+          if (result.triggered > 0) {
+            logger.info({ ...result }, "routine scheduler tick enqueued runs");
+          }
+        })
+        .catch((err) => {
+          logger.error({ err }, "routine scheduler tick failed");
+        });
+
       // Periodically reap orphaned runs (5-min staleness threshold) and make sure
       // persisted queued work is still being driven forward.
       void heartbeat

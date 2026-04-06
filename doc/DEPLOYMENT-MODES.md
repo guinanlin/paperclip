@@ -29,9 +29,11 @@ This keeps one authenticated auth stack while still separating low-friction priv
 
 ## `local_trusted`
 
-- loopback-only host binding
+- loopback-only host binding (canonical default)
 - no human login flow
 - optimized for fastest local startup
+
+Docker note: when running in a container that must bind `0.0.0.0` so the host can reach a published port, set `PAPERCLIP_LOCAL_TRUSTED_ALLOW_NON_LOOPBACK_BIND=true` and treat network exposure as **fully trusted** (see `doc/DOCKER-COMPOSE-PRODUCTION.md`).
 
 ## `authenticated + private`
 

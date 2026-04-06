@@ -215,7 +215,11 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   // Mention state (ref kept in sync so callbacks always see the latest value)
   const [mentionState, setMentionState] = useState<MentionState | null>(null);
   const mentionStateRef = useRef<MentionState | null>(null);
+  /** Last @-query string while mention menu is active; used to avoid resetting highlight on Arrow keys. */
+  const prevMentionQueryRef = useRef<string | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
+  const mentionIndexRef = useRef(0);
+  mentionIndexRef.current = mentionIndex;
   const mentionActive = mentionState !== null && mentions && mentions.length > 0;
   const projectColorById = useMemo(() => {
     const map = new Map<string, string | null>();
@@ -323,15 +327,21 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
   const checkMention = useCallback(() => {
     if (!mentions || mentions.length === 0 || !containerRef.current) {
       mentionStateRef.current = null;
+      prevMentionQueryRef.current = null;
       setMentionState(null);
       return;
     }
     const result = detectMention(containerRef.current);
     mentionStateRef.current = result;
     if (result) {
+      const prevQ = prevMentionQueryRef.current;
+      if (prevQ !== result.query) {
+        setMentionIndex(0);
+        prevMentionQueryRef.current = result.query;
+      }
       setMentionState(result);
-      setMentionIndex(0);
     } else {
+      prevMentionQueryRef.current = null;
       setMentionState(null);
     }
   }, [mentions]);
@@ -342,7 +352,10 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
     const el = containerRef.current;
     // Listen for input events on the container so mention detection
     // also fires after typing (e.g. space to dismiss).
-    const onInput = () => requestAnimationFrame(checkMention);
+    // Must run synchronously (not rAF): otherwise Enter/Arrow in the same
+    // tick as the last typed character sees stale mentionState and ignores
+    // the menu (common in dialogs + Lexical).
+    const onInput = () => checkMention();
 
     document.addEventListener("selectionchange", checkMention);
     el?.addEventListener("input", onInput, true);
@@ -374,96 +387,22 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
       const state = mentionStateRef.current;
       if (!state) return;
 
-      if (option.kind === "project" && option.projectId) {
-        const current = latestValueRef.current;
-        const next = applyMention(current, state.query, option);
-        if (next !== current) {
-          latestValueRef.current = next;
-          ref.current?.setMarkdown(next);
-          onChange(next);
-        }
-        requestAnimationFrame(() => {
-          ref.current?.focus(undefined, { defaultSelection: "rootEnd" });
-          decorateProjectMentions();
-        });
-        mentionStateRef.current = null;
-        setMentionState(null);
-        return;
+      // Lexical/MDXEditor does not reliably commit execCommand insertText into
+      // editor state (DOM insert succeeds but internal markdown stays stale).
+      const current = latestValueRef.current;
+      const next = applyMention(current, state.query, option);
+      if (next !== current) {
+        latestValueRef.current = next;
+        ref.current?.setMarkdown(next);
+        onChange(next);
       }
-
-      const replacement = mentionMarkdown(option);
-
-      // Replace @query directly via DOM selection so the cursor naturally
-      // lands after the inserted text. Lexical picks up the change through
-      // its normal input-event handling.
-      const sel = window.getSelection();
-      if (sel && state.textNode.isConnected) {
-        const range = document.createRange();
-        range.setStart(state.textNode, state.atPos);
-        range.setEnd(state.textNode, state.endPos);
-        sel.removeAllRanges();
-        sel.addRange(range);
-        document.execCommand("insertText", false, replacement);
-
-        // After Lexical reconciles the DOM, the cursor position set by
-        // execCommand may be lost. Explicitly reposition it after the
-        // inserted mention text.
-        const cursorTarget = state.atPos + replacement.length;
-        requestAnimationFrame(() => {
-          const newSel = window.getSelection();
-          if (!newSel) return;
-          // Try the original text node first (it may still be valid)
-          if (state.textNode.isConnected) {
-            const len = state.textNode.textContent?.length ?? 0;
-            if (cursorTarget <= len) {
-              const r = document.createRange();
-              r.setStart(state.textNode, cursorTarget);
-              r.collapse(true);
-              newSel.removeAllRanges();
-              newSel.addRange(r);
-              return;
-            }
-          }
-          // Fallback: search for the replacement in text nodes
-          const editable = containerRef.current?.querySelector('[contenteditable="true"]');
-          if (!editable) return;
-          const walker = document.createTreeWalker(editable, NodeFilter.SHOW_TEXT);
-          let node: Text | null;
-          while ((node = walker.nextNode() as Text | null)) {
-            const text = node.textContent ?? "";
-            const idx = text.indexOf(replacement);
-            if (idx !== -1) {
-              const pos = idx + replacement.length;
-              if (pos <= text.length) {
-                const r = document.createRange();
-                r.setStart(node, pos);
-                r.collapse(true);
-                newSel.removeAllRanges();
-                newSel.addRange(r);
-                return;
-              }
-            }
-          }
-        });
-      } else {
-        // Fallback: full markdown replacement when DOM node is stale
-        const current = latestValueRef.current;
-        const next = applyMention(current, state.query, option);
-        if (next !== current) {
-          latestValueRef.current = next;
-          ref.current?.setMarkdown(next);
-          onChange(next);
-        }
-        requestAnimationFrame(() => {
-          ref.current?.focus(undefined, { defaultSelection: "rootEnd" });
-        });
-      }
-
       requestAnimationFrame(() => {
+        ref.current?.focus(undefined, { defaultSelection: "rootEnd" });
         decorateProjectMentions();
       });
 
       mentionStateRef.current = null;
+      prevMentionQueryRef.current = null;
       setMentionState(null);
     },
     [decorateProjectMentions, onChange],
@@ -493,43 +432,68 @@ export const MarkdownEditor = forwardRef<MarkdownEditorRef, MarkdownEditorProps>
           return;
         }
 
-        // Mention keyboard handling
-        if (mentionActive) {
-          // Space dismisses the popup (let the character be typed normally)
-          if (e.key === " ") {
-            mentionStateRef.current = null;
-            setMentionState(null);
-            return;
-          }
-          // Escape always dismisses
-          if (e.key === "Escape") {
-            e.preventDefault();
-            e.stopPropagation();
-            mentionStateRef.current = null;
-            setMentionState(null);
-            return;
-          }
-          // Arrow / Enter / Tab only when there are filtered results
-          if (filteredMentions.length > 0) {
-            if (e.key === "ArrowDown") {
-              e.preventDefault();
-              e.stopPropagation();
-              setMentionIndex((prev) => Math.min(prev + 1, filteredMentions.length - 1));
-              return;
-            }
-            if (e.key === "ArrowUp") {
-              e.preventDefault();
-              e.stopPropagation();
-              setMentionIndex((prev) => Math.max(prev - 1, 0));
-              return;
-            }
-            if (e.key === "Enter" || e.key === "Tab") {
-              e.preventDefault();
-              e.stopPropagation();
-              selectMention(filteredMentions[mentionIndex]);
-              return;
-            }
-          }
+        // Mention keyboard handling (ref + live filter: avoids stale React state
+        // when keydown fires before the frame after `input`, e.g. in Radix Dialog)
+        if (!mentions?.length || !containerRef.current) return;
+        const keyTarget = e.target;
+        if (!(keyTarget instanceof Node) || !containerRef.current.contains(keyTarget)) {
+          return;
+        }
+
+        const syncKeys = new Set([
+          "ArrowDown",
+          "ArrowUp",
+          "Enter",
+          "Tab",
+          "Escape",
+          " ",
+        ]);
+        if (syncKeys.has(e.key)) {
+          checkMention();
+        }
+
+        const state = mentionStateRef.current;
+        if (!state) return;
+
+        const q = state.query.toLowerCase();
+        const filtered = mentions.filter((m) => m.name.toLowerCase().includes(q)).slice(0, 8);
+
+        if (e.key === " ") {
+          mentionStateRef.current = null;
+          prevMentionQueryRef.current = null;
+          setMentionState(null);
+          return;
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          e.stopPropagation();
+          mentionStateRef.current = null;
+          prevMentionQueryRef.current = null;
+          setMentionState(null);
+          return;
+        }
+
+        if (filtered.length === 0) return;
+
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          e.stopPropagation();
+          setMentionIndex((prev) => Math.min(prev + 1, filtered.length - 1));
+          return;
+        }
+        if (e.key === "ArrowUp") {
+          e.preventDefault();
+          e.stopPropagation();
+          setMentionIndex((prev) => Math.max(prev - 1, 0));
+          return;
+        }
+        if (e.key === "Enter" || e.key === "Tab") {
+          e.preventDefault();
+          e.stopPropagation();
+          const idx = Math.min(mentionIndexRef.current, filtered.length - 1);
+          const opt = filtered[idx];
+          if (opt) selectMention(opt);
+          return;
         }
       }}
       onDragEnter={(evt) => {

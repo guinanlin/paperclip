@@ -84,6 +84,7 @@ const projectFields = {
   color: z.string().optional().nullable(),
   executionWorkspacePolicy: projectExecutionWorkspacePolicySchema.optional().nullable(),
   archivedAt: z.string().datetime().optional().nullable(),
+  budgetLifetimeCents: z.number().int().nonnegative().optional(),
 };
 
 export const createProjectSchema = z.object({

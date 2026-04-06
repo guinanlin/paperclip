@@ -19,6 +19,9 @@ export const queryKeys = {
       piLocalConfig?: { command?: string; cwd?: string },
     ) =>
       ["agents", companyId, "adapter-models", adapterType, piLocalConfig ?? null] as const,
+    instructionsBundle: (id: string) => ["agents", "instructions-bundle", id] as const,
+    instructionsFile: (id: string, relativePath: string) =>
+      ["agents", "instructions-bundle", id, "file", relativePath] as const,
   },
   issues: {
     list: (companyId: string) => ["issues", companyId] as const,
@@ -49,6 +52,12 @@ export const queryKeys = {
     list: (companyId: string) => ["goals", companyId] as const,
     detail: (id: string) => ["goals", "detail", id] as const,
   },
+  routines: {
+    list: (companyId: string) => ["routines", companyId] as const,
+    detail: (id: string) => ["routines", "detail", id] as const,
+    runs: (id: string) => ["routines", "runs", id] as const,
+    activity: (companyId: string, id: string) => ["routines", "activity", companyId, id] as const,
+  },
   approvals: {
     list: (companyId: string, status?: string) =>
       ["approvals", companyId, status] as const,
@@ -66,6 +75,7 @@ export const queryKeys = {
   },
   instance: {
     schedulerHeartbeats: ["instance", "scheduler-heartbeats"] as const,
+    experimentalSettings: ["instance", "settings", "experimental"] as const,
   },
   health: ["health"] as const,
   issueCreationShortcuts: {
@@ -80,6 +90,16 @@ export const queryKeys = {
   activity: (companyId: string) => ["activity", companyId] as const,
   costs: (companyId: string, from?: string, to?: string) =>
     ["costs", companyId, from, to] as const,
+  budgetPolicies: (companyId: string) => ["budget-policies", companyId] as const,
+  budgetIncidents: (companyId: string, status?: string) =>
+    ["budget-incidents", companyId, status ?? "all"] as const,
+  skills: {
+    company: (companyId: string) => ["skills", "company", companyId] as const,
+    agentAttachments: (companyId: string, agentId: string) =>
+      ["skills", "agent-attachments", companyId, agentId] as const,
+    agentSync: (companyId: string, agentId: string) =>
+      ["skills", "agent-sync", companyId, agentId] as const,
+  },
   heartbeats: (companyId: string, agentId?: string) =>
     ["heartbeats", companyId, agentId] as const,
   runDetail: (runId: string) => ["heartbeat-run", runId] as const,

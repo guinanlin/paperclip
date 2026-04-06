@@ -5,6 +5,7 @@ import { notFound, unprocessable } from "../errors.js";
 import { redactCurrentUserText } from "../log-redaction.js";
 import { agentService } from "./agents.js";
 import { notifyHireApproved } from "./hire-hook.js";
+import { budgetService } from "./budget.js";
 
 function redactApprovalComment<T extends { body: string }>(comment: T): T {
   return {
@@ -105,6 +106,10 @@ export function approvalService(db: Db) {
 
       let hireApprovedAgentId: string | null = null;
       const now = new Date();
+      if (applied && updated.type === "budget_override_required") {
+        await budgetService(db).applyBudgetOverrideApproval(updated);
+      }
+
       if (applied && updated.type === "hire_agent") {
         const payload = updated.payload as Record<string, unknown>;
         const payloadAgentId = typeof payload.agentId === "string" ? payload.agentId : null;

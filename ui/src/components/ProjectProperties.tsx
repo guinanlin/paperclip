@@ -3,7 +3,7 @@ import { Link } from "@/lib/router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { Project, ProjectTeamMember } from "@paperclipai/shared";
 import { StatusBadge } from "./StatusBadge";
-import { cn, formatDate } from "../lib/utils";
+import { cn, formatCents, formatDate } from "../lib/utils";
 import { agentsApi } from "../api/agents";
 import { goalsApi } from "../api/goals";
 import { projectsApi } from "../api/projects";
@@ -672,6 +672,27 @@ export function ProjectProperties({ project, onUpdate, onFieldUpdate, getFieldSa
             <StatusBadge status={project.status} />
           )}
         </PropertyRow>
+        <PropertyRow label="Lifetime budget (cents)">
+          {onUpdate || onFieldUpdate ? (
+            <DraftInput
+              value={String(project.budgetLifetimeCents ?? 0)}
+              onCommit={(raw) => {
+                const n = Math.max(0, Math.floor(Number(raw) || 0));
+                onUpdate?.({ budgetLifetimeCents: n });
+              }}
+              immediate
+              className="w-full max-w-xs rounded border border-border bg-transparent px-2 py-1 text-sm outline-none font-mono"
+              placeholder="0"
+            />
+          ) : (
+            <span className="text-sm tabular-nums">{project.budgetLifetimeCents ?? 0}</span>
+          )}
+        </PropertyRow>
+        {(project.budgetLifetimeCents ?? 0) > 0 && (
+          <PropertyRow label="Lifetime spend (billed)">
+            <span className="text-sm tabular-nums">{formatCents(project.spentLifetimeCents ?? 0)}</span>
+          </PropertyRow>
+        )}
         {project.leadAgentId && (
           <PropertyRow label="Lead">
             <span className="text-sm font-mono">{project.leadAgentId.slice(0, 8)}</span>

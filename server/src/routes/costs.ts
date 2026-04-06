@@ -70,6 +70,37 @@ export function costRoutes(db: Db) {
     res.json(rows);
   });
 
+  router.get("/companies/:companyId/costs/by-provider", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const range = parseDateRange(req.query);
+    const rows = await costs.byProvider(companyId, range);
+    res.json(rows);
+  });
+
+  router.get("/companies/:companyId/costs/by-biller", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const range = parseDateRange(req.query);
+    const rows = await costs.byBiller(companyId, range);
+    res.json(rows);
+  });
+
+  router.get("/companies/:companyId/costs/window-spend", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const rows = await costs.windowSpend(companyId);
+    res.json(rows);
+  });
+
+  router.get("/companies/:companyId/costs/by-agent-model", async (req, res) => {
+    const companyId = req.params.companyId as string;
+    assertCompanyAccess(req, companyId);
+    const range = parseDateRange(req.query);
+    const rows = await costs.byAgentModel(companyId, range);
+    res.json(rows);
+  });
+
   router.patch("/companies/:companyId/budgets", validate(updateBudgetSchema), async (req, res) => {
     assertBoard(req);
     const companyId = req.params.companyId as string;

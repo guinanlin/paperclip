@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "@/lib/router";
 import { costsApi } from "../api/costs";
+import { budgetApi } from "../api/budget";
 import { useCompany } from "../context/CompanyContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
@@ -73,15 +75,22 @@ export function Costs() {
     return computeRange(preset);
   }, [preset, customFrom, customTo]);
 
+  const { data: openIncidents } = useQuery({
+    queryKey: queryKeys.budgetIncidents(selectedCompanyId!, "open"),
+    queryFn: () => budgetApi.listIncidents(selectedCompanyId!, "open"),
+    enabled: !!selectedCompanyId,
+  });
+
   const { data, isLoading, error } = useQuery({
     queryKey: queryKeys.costs(selectedCompanyId!, from || undefined, to || undefined),
     queryFn: async () => {
-      const [summary, byAgent, byProject] = await Promise.all([
+      const [summary, byAgent, byProject, byProvider] = await Promise.all([
         costsApi.summary(selectedCompanyId!, from || undefined, to || undefined),
         costsApi.byAgent(selectedCompanyId!, from || undefined, to || undefined),
         costsApi.byProject(selectedCompanyId!, from || undefined, to || undefined),
+        costsApi.byProvider(selectedCompanyId!, from || undefined, to || undefined),
       ]);
-      return { summary, byAgent, byProject };
+      return { summary, byAgent, byProject, byProvider };
     },
     enabled: !!selectedCompanyId,
   });
@@ -131,6 +140,40 @@ export function Costs() {
 
       {error && <p className="text-sm text-destructive">{error.message}</p>}
 
+      {(openIncidents ?? []).length > 0 && (
+        <Card>
+          <CardContent className="p-4 space-y-2">
+            <h3 className="text-sm font-semibold">Budget incidents (open)</h3>
+            <ul className="space-y-2 text-sm">
+              {(openIncidents ?? []).map((inc) => (
+                <li
+                  key={inc.id}
+                  className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-2 last:border-0 last:pb-0"
+                >
+                  <div>
+                    <span className="font-medium capitalize">{inc.thresholdType}</span>
+                    <span className="text-muted-foreground">
+                      {" "}
+                      · {inc.scopeType}
+                      {inc.scopeId ? ` ${inc.scopeId.slice(0, 8)}…` : ""} · observed{" "}
+                      {formatCents(inc.amountObserved)} / limit {formatCents(inc.amountLimit)}
+                    </span>
+                  </div>
+                  {inc.approvalId ? (
+                    <Link
+                      to={`/approvals/${inc.approvalId}`}
+                      className="text-xs underline underline-offset-2 shrink-0"
+                    >
+                      Approval
+                    </Link>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
       {data && (
         <>
           {/* Summary card */}
@@ -169,6 +212,46 @@ export function Costs() {
             </CardContent>
           </Card>
 
+          <Card>
+            <CardContent className="p-4">
+              <h3 className="text-sm font-semibold mb-3">By Provider</h3>
+              {data.byProvider.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No cost events yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {data.byProvider.map((row) => (
+                    <div
+                      key={`${row.provider}:${row.biller}:${row.billingType}:${row.model}`}
+                      className="flex items-center justify-between text-sm gap-2"
+                    >
+                      <div className="min-w-0 truncate">
+                        <span className="font-medium">{row.provider}</span>
+                        <span className="text-muted-foreground">
+                          {" "}
+                          · {row.model}
+                          {row.biller !== row.provider ? ` · billed by ${row.biller}` : ""}
+                        </span>
+                        <span className="text-xs text-muted-foreground block">
+                          {row.billingType}
+                        </span>
+                      </div>
+                      <div className="text-right shrink-0 tabular-nums">
+                        <span className="font-medium block">{formatCents(row.costCents)}</span>
+                        <span className="text-xs text-muted-foreground">
+                          in {formatTokens(row.inputTokens)}
+                          {row.cachedInputTokens > 0
+                            ? ` / cache ${formatTokens(row.cachedInputTokens)}`
+                            : ""}{" "}
+                          / out {formatTokens(row.outputTokens)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {/* By Agent / By Project */}
           <div className="grid md:grid-cols-2 gap-4">
             <Card>
@@ -195,14 +278,18 @@ export function Costs() {
                         <div className="text-right shrink-0 ml-2 tabular-nums">
                           <span className="font-medium block">{formatCents(row.costCents)}</span>
                           <span className="text-xs text-muted-foreground block">
-                            in {formatTokens(row.inputTokens)} / out {formatTokens(row.outputTokens)} tok
+                            in {formatTokens(row.inputTokens)}
+                            {row.cachedInputTokens > 0
+                              ? ` / cache ${formatTokens(row.cachedInputTokens)}`
+                              : ""}{" "}
+                            / out {formatTokens(row.outputTokens)} tok
                           </span>
                           {(row.apiRunCount > 0 || row.subscriptionRunCount > 0) && (
                             <span className="text-xs text-muted-foreground block">
                               {row.apiRunCount > 0 ? `api runs: ${row.apiRunCount}` : null}
                               {row.apiRunCount > 0 && row.subscriptionRunCount > 0 ? " | " : null}
                               {row.subscriptionRunCount > 0
-                                ? `subscription runs: ${row.subscriptionRunCount} (${formatTokens(row.subscriptionInputTokens)} in / ${formatTokens(row.subscriptionOutputTokens)} out tok)`
+                                ? `subscription runs: ${row.subscriptionRunCount} (${formatTokens(row.subscriptionInputTokens)} in${row.subscriptionCachedInputTokens > 0 ? ` / ${formatTokens(row.subscriptionCachedInputTokens)} cache` : ""} / ${formatTokens(row.subscriptionOutputTokens)} out tok)`
                                 : null}
                             </span>
                           )}
@@ -218,7 +305,7 @@ export function Costs() {
               <CardContent className="p-4">
                 <h3 className="text-sm font-semibold mb-3">By Project</h3>
                 {data.byProject.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No project-attributed run costs yet.</p>
+                  <p className="text-sm text-muted-foreground">No project-attributed costs in this range yet.</p>
                 ) : (
                   <div className="space-y-2">
                     {data.byProject.map((row) => (

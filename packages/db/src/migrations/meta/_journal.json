@@ -239,6 +239,27 @@
       "when": 1773809066243,
       "tag": "0033_plain_storm",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1775412999872,
+      "tag": "0034_dry_romulus",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1775413709554,
+      "tag": "0035_handy_bedlam",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1775445737708,
+      "tag": "0036_many_tombstone",
+      "breakpoints": true
     }
   ]
 }

@@ -17,7 +17,7 @@ import { StatusBadge } from "../components/StatusBadge";
 import { IssuesList } from "../components/IssuesList";
 import { PageSkeleton } from "../components/PageSkeleton";
 import { PageTabBar } from "../components/PageTabBar";
-import { projectRouteRef, cn } from "../lib/utils";
+import { projectRouteRef, cn, formatCents } from "../lib/utils";
 import { Tabs } from "@/components/ui/tabs";
 import { PluginLauncherOutlet } from "@/plugins/launchers";
 import { PluginSlotMount, PluginSlotOutlet, usePluginSlots } from "@/plugins/slots";
@@ -50,12 +50,31 @@ function OverviewContent({
   onUpdate,
   imageUploadHandler,
 }: {
-  project: { description: string | null; status: string; targetDate: string | null };
+  project: {
+    description: string | null;
+    status: string;
+    targetDate: string | null;
+    budgetLifetimeCents?: number;
+    spentLifetimeCents?: number;
+    pausedAt?: string | Date | null;
+    pauseReason?: string | null;
+  };
   onUpdate: (data: Record<string, unknown>) => void;
   imageUploadHandler?: (file: File) => Promise<string>;
 }) {
+  const budgetCents = project.budgetLifetimeCents ?? 0;
+  const spentCents = project.spentLifetimeCents ?? 0;
+  const paused = Boolean(project.pausedAt);
+
   return (
     <div className="space-y-6">
+      {paused && (
+        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-100">
+          This project is paused
+          {project.pauseReason === "budget_exceeded" ? " after exceeding its lifetime budget" : ""}.
+          Resolve the related budget approval to resume execution.
+        </div>
+      )}
       <InlineEditor
         value={project.description ?? ""}
         onSave={(description) => onUpdate({ description })}
@@ -77,6 +96,14 @@ function OverviewContent({
           <div>
             <span className="text-muted-foreground">Target Date</span>
             <p>{project.targetDate}</p>
+          </div>
+        )}
+        {budgetCents > 0 && (
+          <div className="sm:col-span-2">
+            <span className="text-muted-foreground">Lifetime budget (billed)</span>
+            <p className="mt-1 tabular-nums">
+              {formatCents(spentCents)} / {formatCents(budgetCents)}
+            </p>
           </div>
         )}
       </div>

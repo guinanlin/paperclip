@@ -56,6 +56,36 @@ const SESSIONED_LOCAL_ADAPTERS = new Set([
   "pi_local",
 ]);
 
+function normalizeLedgerBillingType(value: unknown): string {
+  const raw = readNonEmptyString(value);
+  switch (raw) {
+    case "api":
+    case "metered_api":
+      return "metered_api";
+    case "subscription":
+    case "subscription_included":
+      return "subscription_included";
+    case "subscription_overage":
+      return "subscription_overage";
+    case "credits":
+      return "credits";
+    case "fixed":
+      return "fixed";
+    default:
+      return "unknown";
+  }
+}
+
+function resolveLedgerBiller(result: AdapterExecutionResult): string {
+  return readNonEmptyString(result.biller) ?? readNonEmptyString(result.provider) ?? "unknown";
+}
+
+function normalizeBilledCostCents(costUsd: number | null | undefined, billingType: string): number {
+  if (billingType === "subscription_included") return 0;
+  if (typeof costUsd !== "number" || !Number.isFinite(costUsd)) return 0;
+  return Math.max(0, Math.round(costUsd * 100));
+}
+
 const heartbeatRunListColumns = {
   id: heartbeatRuns.id,
   companyId: heartbeatRuns.companyId,
@@ -1302,6 +1332,36 @@ export function heartbeatService(db: Db) {
     }
   }
 
+  async function resolveLedgerScopeForRun(
+    companyId: string,
+    run: typeof heartbeatRuns.$inferSelect,
+  ) {
+    const context = parseObject(run.contextSnapshot);
+    const contextIssueId = readNonEmptyString(context.issueId);
+    const contextProjectId = readNonEmptyString(context.projectId);
+
+    if (!contextIssueId) {
+      return {
+        issueId: null,
+        projectId: contextProjectId,
+      };
+    }
+
+    const issue = await db
+      .select({
+        id: issues.id,
+        projectId: issues.projectId,
+      })
+      .from(issues)
+      .where(and(eq(issues.id, contextIssueId), eq(issues.companyId, companyId)))
+      .then((rows) => rows[0] ?? null);
+
+    return {
+      issueId: issue?.id ?? null,
+      projectId: issue?.projectId ?? contextProjectId,
+    };
+  }
+
   async function updateRuntimeState(
     agent: typeof agents.$inferSelect,
     run: typeof heartbeatRuns.$inferSelect,
@@ -1314,8 +1374,12 @@ export function heartbeatService(db: Db) {
     const inputTokens = usage?.inputTokens ?? 0;
     const outputTokens = usage?.outputTokens ?? 0;
     const cachedInputTokens = usage?.cachedInputTokens ?? 0;
-    const additionalCostCents = Math.max(0, Math.round((result.costUsd ?? 0) * 100));
+    const billingType = normalizeLedgerBillingType(result.billingType);
+    const additionalCostCents = normalizeBilledCostCents(result.costUsd, billingType);
     const hasTokenUsage = inputTokens > 0 || outputTokens > 0 || cachedInputTokens > 0;
+    const provider = result.provider ?? "unknown";
+    const biller = resolveLedgerBiller(result);
+    const ledgerScope = await resolveLedgerScopeForRun(agent.companyId, run);
 
     await db
       .update(agentRuntimeState)
@@ -1336,10 +1400,16 @@ export function heartbeatService(db: Db) {
     if (additionalCostCents > 0 || hasTokenUsage) {
       const costs = costService(db);
       await costs.createEvent(agent.companyId, {
+        heartbeatRunId: run.id,
         agentId: agent.id,
-        provider: result.provider ?? "unknown",
+        issueId: ledgerScope.issueId,
+        projectId: ledgerScope.projectId,
+        provider,
+        biller,
+        billingType,
         model: result.model ?? "unknown",
         inputTokens,
+        cachedInputTokens,
         outputTokens,
         costCents: additionalCostCents,
         occurredAt: new Date(),
@@ -1441,13 +1511,39 @@ export function heartbeatService(db: Db) {
     );
     const contextProjectId = readNonEmptyString(context.projectId);
     const executionProjectId = issueAssigneeConfig?.projectId ?? contextProjectId;
-    const projectExecutionWorkspacePolicy = executionProjectId
+    const executionProjectRow = executionProjectId
       ? await db
-          .select({ executionWorkspacePolicy: projects.executionWorkspacePolicy })
+          .select({
+            executionWorkspacePolicy: projects.executionWorkspacePolicy,
+            pausedAt: projects.pausedAt,
+            pauseReason: projects.pauseReason,
+          })
           .from(projects)
           .where(and(eq(projects.id, executionProjectId), eq(projects.companyId, agent.companyId)))
-          .then((rows) => parseProjectExecutionWorkspacePolicy(rows[0]?.executionWorkspacePolicy))
+          .then((rows) => rows[0] ?? null)
       : null;
+    const projectExecutionWorkspacePolicy = parseProjectExecutionWorkspacePolicy(
+      executionProjectRow?.executionWorkspacePolicy,
+    );
+
+    if (executionProjectRow?.pausedAt) {
+      const msg =
+        executionProjectRow.pauseReason === "budget_exceeded"
+          ? "This project is paused after exceeding its budget. Approve a budget override to continue."
+          : "This project is paused.";
+      await setRunStatus(runId, "failed", {
+        error: msg,
+        errorCode: "project_paused",
+        finishedAt: new Date(),
+      });
+      await setWakeupStatus(run.wakeupRequestId, "failed", {
+        finishedAt: new Date(),
+        error: msg,
+      });
+      const failedRun = await getRun(runId);
+      if (failedRun) await releaseIssueExecutionAndPromote(failedRun);
+      return;
+    }
     const taskSession = taskKey
       ? await getTaskSession(agent.companyId, agent.id, agent.adapterType, taskKey)
       : null;

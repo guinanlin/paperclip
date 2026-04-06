@@ -22,13 +22,18 @@ services:
     environment:
       DATABASE_URL: postgres://paperclip:paperclip@db:5432/paperclip
       PORT: "3100"
+      HOST: "0.0.0.0"
       SERVE_UI: "true"
-      PAPERCLIP_DEPLOYMENT_MODE: "authenticated"
+      PAPERCLIP_DEPLOYMENT_MODE: "local_trusted"
       PAPERCLIP_DEPLOYMENT_EXPOSURE: "private"
+      PAPERCLIP_LOCAL_TRUSTED_ALLOW_NON_LOOPBACK_BIND: "true"
       PAPERCLIP_PUBLIC_URL: "${PAPERCLIP_PUBLIC_URL:-http://localhost:4100}"
-      BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set}"
+      BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:-}"
     volumes:
       - paperclip-data:/paperclip
+      # Agent/project workspace paths often use host absolute dirs (e.g. /media/.../projects/foo).
+      # Mount the whole projects tree at the same path inside the container.
+      - "${PAPERCLIP_HOST_PROJECTS_ROOT:-/media/ctyun/datadisk1/projects}:/media/ctyun/datadisk1/projects"
     depends_on:
       db:
         condition: service_healthy

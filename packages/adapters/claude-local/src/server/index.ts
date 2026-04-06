@@ -1,4 +1,5 @@
 export { execute, runClaudeLogin } from "./execute.js";
+export { listClaudeSkills, syncClaudeSkills } from "./skill-sync.js";
 export { testEnvironment } from "./test.js";
 export {
   parseClaudeStreamJson,

@@ -61,6 +61,11 @@ export interface Project {
   primaryWorkspace: ProjectWorkspace | null;
   teamMembers?: ProjectTeamMember[];
   archivedAt: Date | null;
+  /** Lifetime spend budget in cents (billed usage); 0 means unset. */
+  budgetLifetimeCents?: number;
+  spentLifetimeCents?: number;
+  pausedAt?: Date | string | null;
+  pauseReason?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

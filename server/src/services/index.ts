@@ -1,4 +1,5 @@
 export { companyService } from "./companies.js";
+export { agentInstructionsService, syncInstructionsBundleConfigFromFilePath } from "./agent-instructions.js";
 export { agentService, deduplicateAgentName } from "./agents.js";
 export { assetService } from "./assets.js";
 export { documentService, extractLegacyPlanBody } from "./documents.js";
@@ -11,7 +12,10 @@ export { activityService, type ActivityFilters } from "./activity.js";
 export { approvalService } from "./approvals.js";
 export { secretService } from "./secrets.js";
 export { costService } from "./costs.js";
+export { budgetService } from "./budget.js";
+export { skillService } from "./skills.js";
 export { heartbeatService } from "./heartbeat.js";
+export { routineService } from "./routines.js";
 export { dashboardService } from "./dashboard.js";
 export { sidebarBadgeService } from "./sidebar-badges.js";
 export { accessService } from "./access.js";

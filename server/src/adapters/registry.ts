@@ -3,24 +3,32 @@ import {
   execute as claudeExecute,
   testEnvironment as claudeTestEnvironment,
   sessionCodec as claudeSessionCodec,
+  listClaudeSkills,
+  syncClaudeSkills,
 } from "@paperclipai/adapter-claude-local/server";
 import { agentConfigurationDoc as claudeAgentConfigurationDoc, models as claudeModels } from "@paperclipai/adapter-claude-local";
 import {
   execute as codexExecute,
   testEnvironment as codexTestEnvironment,
   sessionCodec as codexSessionCodec,
+  listCodexSkills,
+  syncCodexSkills,
 } from "@paperclipai/adapter-codex-local/server";
 import { agentConfigurationDoc as codexAgentConfigurationDoc, models as codexModels } from "@paperclipai/adapter-codex-local";
 import {
   execute as cursorExecute,
   testEnvironment as cursorTestEnvironment,
   sessionCodec as cursorSessionCodec,
+  listCursorSkills,
+  syncCursorSkills,
 } from "@paperclipai/adapter-cursor-local/server";
 import { agentConfigurationDoc as cursorAgentConfigurationDoc, models as cursorModels } from "@paperclipai/adapter-cursor-local";
 import {
   execute as geminiExecute,
   testEnvironment as geminiTestEnvironment,
   sessionCodec as geminiSessionCodec,
+  listGeminiSkills,
+  syncGeminiSkills,
 } from "@paperclipai/adapter-gemini-local/server";
 import { agentConfigurationDoc as geminiAgentConfigurationDoc, models as geminiModels } from "@paperclipai/adapter-gemini-local";
 import {
@@ -28,6 +36,8 @@ import {
   testEnvironment as openCodeTestEnvironment,
   sessionCodec as openCodeSessionCodec,
   listOpenCodeModels,
+  listOpenCodeSkills,
+  syncOpenCodeSkills,
 } from "@paperclipai/adapter-opencode-local/server";
 import {
   agentConfigurationDoc as openCodeAgentConfigurationDoc,
@@ -47,6 +57,8 @@ import {
   testEnvironment as piTestEnvironment,
   sessionCodec as piSessionCodec,
   listPiModels,
+  listPiSkills,
+  syncPiSkills,
 } from "@paperclipai/adapter-pi-local/server";
 import {
   agentConfigurationDoc as piAgentConfigurationDoc,
@@ -62,6 +74,8 @@ const claudeLocalAdapter: ServerAdapterModule = {
   models: claudeModels,
   supportsLocalAgentJwt: true,
   agentConfigurationDoc: claudeAgentConfigurationDoc,
+  listSkills: listClaudeSkills,
+  syncSkills: syncClaudeSkills,
 };
 
 const codexLocalAdapter: ServerAdapterModule = {
@@ -73,6 +87,8 @@ const codexLocalAdapter: ServerAdapterModule = {
   listModels: listCodexModels,
   supportsLocalAgentJwt: true,
   agentConfigurationDoc: codexAgentConfigurationDoc,
+  listSkills: listCodexSkills,
+  syncSkills: syncCodexSkills,
 };
 
 const cursorLocalAdapter: ServerAdapterModule = {
@@ -84,6 +100,8 @@ const cursorLocalAdapter: ServerAdapterModule = {
   listModels: listCursorModels,
   supportsLocalAgentJwt: true,
   agentConfigurationDoc: cursorAgentConfigurationDoc,
+  listSkills: listCursorSkills,
+  syncSkills: syncCursorSkills,
 };
 
 const geminiLocalAdapter: ServerAdapterModule = {
@@ -94,6 +112,8 @@ const geminiLocalAdapter: ServerAdapterModule = {
   models: geminiModels,
   supportsLocalAgentJwt: true,
   agentConfigurationDoc: geminiAgentConfigurationDoc,
+  listSkills: listGeminiSkills,
+  syncSkills: syncGeminiSkills,
 };
 
 const openclawGatewayAdapter: ServerAdapterModule = {
@@ -114,6 +134,8 @@ const openCodeLocalAdapter: ServerAdapterModule = {
   listModels: listOpenCodeModels,
   supportsLocalAgentJwt: true,
   agentConfigurationDoc: openCodeAgentConfigurationDoc,
+  listSkills: listOpenCodeSkills,
+  syncSkills: syncOpenCodeSkills,
 };
 
 const piLocalAdapter: ServerAdapterModule = {
@@ -125,6 +147,8 @@ const piLocalAdapter: ServerAdapterModule = {
   listModels: listPiModels,
   supportsLocalAgentJwt: true,
   agentConfigurationDoc: piAgentConfigurationDoc,
+  listSkills: listPiSkills,
+  syncSkills: syncPiSkills,
 };
 
 const adaptersByType = new Map<string, ServerAdapterModule>(

@@ -2,6 +2,10 @@ export type { Company } from "./company.js";
 export type {
   Agent,
   AgentPermissions,
+  AgentInstructionsBundleMode,
+  AgentInstructionsFileSummary,
+  AgentInstructionsFileDetail,
+  AgentInstructionsBundle,
   AgentKeyCreated,
   AgentConfigRevision,
   AdapterEnvironmentCheckLevel,
@@ -42,6 +46,21 @@ export type {
   IssueCreationShortcut,
 } from "./issue.js";
 export type { Goal } from "./goal.js";
+export type {
+  Routine,
+  RoutineVariable,
+  RoutineVariableDefaultValue,
+  RoutineTrigger,
+  RoutineRun,
+  RoutineTriggerSecretMaterial,
+  RoutineDetail,
+  RoutineRunSummary,
+  RoutineExecutionIssueOrigin,
+  RoutineListItem,
+  RoutineProjectSummary,
+  RoutineAgentSummary,
+  RoutineIssueSummary,
+} from "./routine.js";
 export type { Approval, ApprovalComment } from "./approval.js";
 export type {
   SecretProvider,
@@ -53,7 +72,16 @@ export type {
   CompanySecret,
   SecretProviderDescriptor,
 } from "./secrets.js";
-export type { CostEvent, CostSummary, CostByAgent } from "./cost.js";
+export type {
+  CostEvent,
+  CostSummary,
+  CostByAgent,
+  CostByProject,
+  CostByProviderModel,
+  CostByBiller,
+  CostByAgentModel,
+  CostWindowSpendRow,
+} from "./cost.js";
 export type {
   HeartbeatRun,
   HeartbeatRunEvent,

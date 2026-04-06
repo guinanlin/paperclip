@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
 import { dashboardApi } from "../api/dashboard";
+import { budgetApi } from "../api/budget";
 import { activityApi } from "../api/activity";
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
@@ -79,6 +80,13 @@ export function Dashboard() {
     queryFn: () => heartbeatsApi.list(selectedCompanyId!),
     enabled: !!selectedCompanyId,
   });
+
+  const { data: budgetIncidents } = useQuery({
+    queryKey: queryKeys.budgetIncidents(selectedCompanyId!, "open"),
+    queryFn: () => budgetApi.listIncidents(selectedCompanyId!, "open"),
+    enabled: !!selectedCompanyId,
+  });
+  const openHardBudgetIncidents = (budgetIncidents ?? []).filter((i) => i.thresholdType === "hard");
 
   const recentIssues = issues ? getRecentIssues(issues) : [];
   const recentActivity = useMemo(() => (activity ?? []).slice(0, 10), [activity]);
@@ -188,6 +196,23 @@ export function Dashboard() {
   return (
     <div className="space-y-6">
       {error && <p className="text-sm text-destructive">{error.message}</p>}
+
+      {openHardBudgetIncidents.length > 0 && (
+        <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm">
+          <span className="font-medium text-destructive">
+            {openHardBudgetIncidents.length} open budget incident
+            {openHardBudgetIncidents.length === 1 ? "" : "s"}
+          </span>
+          <span className="text-muted-foreground"> — </span>
+          <Link to="/costs" className="underline underline-offset-2">
+            View on Costs
+          </Link>
+          <span className="text-muted-foreground"> · </span>
+          <Link to="/approvals/pending" className="underline underline-offset-2">
+            Pending approvals
+          </Link>
+        </div>
+      )}
 
       {hasNoAgents && (
         <div className="flex items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 dark:border-amber-500/25 dark:bg-amber-950/60">

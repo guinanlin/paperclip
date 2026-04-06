@@ -68,6 +68,8 @@ export interface AdapterExecutionResult {
   sessionParams?: Record<string, unknown> | null;
   sessionDisplayId?: string | null;
   provider?: string | null;
+  /** When set, the system that bills for the usage (may differ from upstream provider). */
+  biller?: string | null;
   model?: string | null;
   billingType?: AdapterBillingType | null;
   costUsd?: number | null;
@@ -171,6 +173,34 @@ export interface HireApprovedHookResult {
   detail?: Record<string, unknown>;
 }
 
+/** How an adapter reconciles control-plane desired skills with on-disk state. */
+export type SkillSyncMode = "persistent" | "ephemeral" | "unsupported";
+
+export interface AdapterSkillSyncContext {
+  agent: AdapterAgent;
+  config: Record<string, unknown>;
+  onLog: AdapterExecutionContext["onLog"];
+  desiredSlugs: string[];
+}
+
+export interface AdapterSkillListEntry {
+  slug: string;
+  present: boolean;
+  desired: boolean;
+  /** Bundled Paperclip skill vs user disk vs not yet materialized */
+  source?: "paperclip_bundled" | "local_disk" | "missing";
+}
+
+export interface AdapterSkillListResult {
+  mode: SkillSyncMode;
+  /** Resolved adapter skills directory when applicable */
+  skillsHome?: string;
+  entries: AdapterSkillListEntry[];
+  message?: string;
+  /** e.g. OpenCode shares ~/.claude/skills with other tools */
+  sharedHomeNote?: string;
+}
+
 export interface ServerAdapterModule {
   type: string;
   execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult>;
@@ -188,6 +218,10 @@ export interface ServerAdapterModule {
     payload: HireApprovedPayload,
     adapterConfig: Record<string, unknown>,
   ) => Promise<HireApprovedHookResult>;
+  /** Optional: list skills visible to this adapter on the host (for control-plane drift UI). */
+  listSkills?: (ctx: AdapterSkillSyncContext) => Promise<AdapterSkillListResult>;
+  /** Optional: reconcile bundled / desired slugs under the adapter skills home (persistent adapters). */
+  syncSkills?: (ctx: AdapterSkillSyncContext) => Promise<AdapterSkillListResult>;
 }
 
 // ---------------------------------------------------------------------------

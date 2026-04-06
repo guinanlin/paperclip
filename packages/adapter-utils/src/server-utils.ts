@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { constants as fsConstants, promises as fs } from "node:fs";
 import path from "node:path";
+import type { AdapterSkillListEntry } from "./types.js";
 
 export interface RunProcessResult {
   exitCode: number | null;
@@ -544,4 +545,98 @@ export async function runChildProcess(
       })
       .catch(reject);
   });
+}
+
+export function normalizeSkillSlug(raw: string): string {
+  return raw.trim().toLowerCase();
+}
+
+/** Skill directory names under `skillsHome` that contain `SKILL.md`. */
+export async function listSkillSlugsInHome(skillsHome: string): Promise<string[]> {
+  try {
+    const dirents = await fs.readdir(skillsHome, { withFileTypes: true });
+    const slugs: string[] = [];
+    for (const entry of dirents) {
+      if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
+      const skillMd = path.join(skillsHome, entry.name, "SKILL.md");
+      const ok = await fs.access(skillMd, fsConstants.R_OK).then(() => true).catch(() => false);
+      if (ok) slugs.push(entry.name);
+    }
+    return slugs.sort((a, b) => a.localeCompare(b));
+  } catch {
+    return [];
+  }
+}
+
+export function mergeAdapterSkillEntries(
+  diskSlugs: string[],
+  desiredSlugs: string[],
+  opts?: { bundleMissingLower?: Set<string>; linkedFromBundleLower?: Set<string> },
+): AdapterSkillListEntry[] {
+  const bundleMissingLower = opts?.bundleMissingLower ?? new Set<string>();
+  const linkedFromBundleLower = opts?.linkedFromBundleLower ?? new Set<string>();
+  const desiredNorm = desiredSlugs.map(normalizeSkillSlug).filter(Boolean);
+  const desiredSet = new Set(desiredNorm);
+  const diskLowerToDisplay = new Map<string, string>();
+  for (const d of diskSlugs) {
+    diskLowerToDisplay.set(normalizeSkillSlug(d), d);
+  }
+  const keys = new Set<string>([...desiredNorm, ...diskSlugs.map((s) => normalizeSkillSlug(s))]);
+  const entries: AdapterSkillListEntry[] = [];
+  for (const key of keys) {
+    const present = diskLowerToDisplay.has(key);
+    const desired = desiredSet.has(key);
+    let source: AdapterSkillListEntry["source"];
+    if (desired && !present && bundleMissingLower.has(key)) {
+      source = "missing";
+    } else if (present && desired && linkedFromBundleLower.has(key)) {
+      source = "paperclip_bundled";
+    } else if (present) {
+      source = "local_disk";
+    }
+    entries.push({
+      slug: diskLowerToDisplay.get(key) ?? key,
+      present,
+      desired,
+      ...(source ? { source } : {}),
+    });
+  }
+  entries.sort((a, b) => a.slug.localeCompare(b.slug));
+  return entries;
+}
+
+export async function ensureDesiredSkillsSymlinkedFromPaperclip(options: {
+  moduleDir: string;
+  skillsHome: string;
+  desiredSlugs: string[];
+}): Promise<{ linkedLower: Set<string>; missingLower: Set<string> }> {
+  const entries = await listPaperclipSkillEntries(options.moduleDir);
+  const byLower = new Map(entries.map((e) => [normalizeSkillSlug(e.name), e] as const));
+  const linkedLower = new Set<string>();
+  const missingLower = new Set<string>();
+
+  await fs.mkdir(options.skillsHome, { recursive: true });
+
+  for (const raw of options.desiredSlugs) {
+    const key = normalizeSkillSlug(raw);
+    if (!key) continue;
+    const entry = byLower.get(key);
+    if (!entry) {
+      missingLower.add(key);
+      continue;
+    }
+    const target = path.join(options.skillsHome, entry.name);
+    await ensurePaperclipSkillSymlink(entry.source, target);
+    linkedLower.add(key);
+  }
+
+  const allowedNames = new Set(entries.map((e) => e.name));
+  for (const raw of options.desiredSlugs) {
+    const key = normalizeSkillSlug(raw);
+    const entry = key ? byLower.get(key) : undefined;
+    if (entry) allowedNames.add(entry.name);
+  }
+  await removeMaintainerOnlySkillSymlinks(options.skillsHome, allowedNames);
+
+  return { linkedLower, missingLower };
 }

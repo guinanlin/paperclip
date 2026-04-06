@@ -1,13 +1,13 @@
-import type { CostSummary, CostByAgent } from "@paperclipai/shared";
+import type {
+  CostSummary,
+  CostByAgent,
+  CostByProject,
+  CostByProviderModel,
+  CostByBiller,
+  CostByAgentModel,
+  CostWindowSpendRow,
+} from "@paperclipai/shared";
 import { api } from "./client";
-
-export interface CostByProject {
-  projectId: string | null;
-  projectName: string | null;
-  costCents: number;
-  inputTokens: number;
-  outputTokens: number;
-}
 
 function dateParams(from?: string, to?: string): string {
   const params = new URLSearchParams();
@@ -24,4 +24,12 @@ export const costsApi = {
     api.get<CostByAgent[]>(`/companies/${companyId}/costs/by-agent${dateParams(from, to)}`),
   byProject: (companyId: string, from?: string, to?: string) =>
     api.get<CostByProject[]>(`/companies/${companyId}/costs/by-project${dateParams(from, to)}`),
+  byProvider: (companyId: string, from?: string, to?: string) =>
+    api.get<CostByProviderModel[]>(`/companies/${companyId}/costs/by-provider${dateParams(from, to)}`),
+  byBiller: (companyId: string, from?: string, to?: string) =>
+    api.get<CostByBiller[]>(`/companies/${companyId}/costs/by-biller${dateParams(from, to)}`),
+  windowSpend: (companyId: string) =>
+    api.get<CostWindowSpendRow[]>(`/companies/${companyId}/costs/window-spend`),
+  byAgentModel: (companyId: string, from?: string, to?: string) =>
+    api.get<CostByAgentModel[]>(`/companies/${companyId}/costs/by-agent-model${dateParams(from, to)}`),
 };

@@ -7,6 +7,10 @@ import {
   agentRuntimeState,
   agentTaskSessions,
   agentWakeupRequests,
+  agentSkillAttachments,
+  companySkills,
+  budgetIncidents,
+  budgetPolicies,
   issues,
   issueComments,
   projects,
@@ -108,6 +112,10 @@ export function companyService(db: Db) {
         await tx.delete(agentRuntimeState).where(eq(agentRuntimeState.companyId, id));
         await tx.delete(issueComments).where(eq(issueComments.companyId, id));
         await tx.delete(costEvents).where(eq(costEvents.companyId, id));
+        await tx.delete(agentSkillAttachments).where(eq(agentSkillAttachments.companyId, id));
+        await tx.delete(budgetIncidents).where(eq(budgetIncidents.companyId, id));
+        await tx.delete(budgetPolicies).where(eq(budgetPolicies.companyId, id));
+        await tx.delete(companySkills).where(eq(companySkills.companyId, id));
         await tx.delete(approvalComments).where(eq(approvalComments.companyId, id));
         await tx.delete(approvals).where(eq(approvals.companyId, id));
         await tx.delete(companySecrets).where(eq(companySecrets.companyId, id));

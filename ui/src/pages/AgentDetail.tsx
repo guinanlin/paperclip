@@ -16,6 +16,7 @@ import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { AgentConfigForm } from "../components/AgentConfigForm";
 import { PageTabBar } from "../components/PageTabBar";
+import { AgentSkillsPanel } from "../components/AgentSkillsPanel";
 import { adapterLabels, roleLabels } from "../components/agent-config-primitives";
 import { getUIAdapter, buildTranscript } from "../adapters";
 import { StatusBadge } from "../components/StatusBadge";
@@ -25,6 +26,7 @@ import { CopyText } from "../components/CopyText";
 import { EntityRow } from "../components/EntityRow";
 import { Identity } from "../components/Identity";
 import { PageSkeleton } from "../components/PageSkeleton";
+import { PromptsTab } from "../components/AgentInstructionsTab";
 import { ScrollToBottom } from "../components/ScrollToBottom";
 import { formatCents, formatDate, relativeTime, formatTokens } from "../lib/utils";
 import { cn } from "../lib/utils";
@@ -179,10 +181,12 @@ function scrollToContainerBottom(container: ScrollContainer, behavior: ScrollBeh
   container.scrollTo({ top: container.scrollHeight, behavior });
 }
 
-type AgentDetailView = "dashboard" | "configuration" | "automation" | "runs";
+type AgentDetailView = "dashboard" | "instructions" | "configuration" | "skills" | "automation" | "runs";
 
 function parseAgentDetailView(value: string | null): AgentDetailView {
+  if (value === "instructions" || value === "prompts") return "instructions";
   if (value === "configure" || value === "configuration") return "configuration";
+  if (value === "skills") return "skills";
   if (value === "automation") return "automation";
   if (value === "runs") return value;
   return "dashboard";
@@ -318,13 +322,17 @@ export function AgentDetail() {
       return;
     }
     const canonicalTab =
-      activeView === "configuration"
-        ? "configuration"
-        : activeView === "runs"
-          ? "runs"
-          : activeView === "automation"
-            ? "automation"
-            : "dashboard";
+      activeView === "instructions"
+        ? "instructions"
+        : activeView === "configuration"
+          ? "configuration"
+          : activeView === "skills"
+            ? "skills"
+            : activeView === "runs"
+              ? "runs"
+              : activeView === "automation"
+                ? "automation"
+                : "dashboard";
     if (routeAgentRef !== canonicalAgentRef || urlTab !== canonicalTab) {
       navigate(`/agents/${canonicalAgentRef}/${canonicalTab}`, { replace: true });
       return;
@@ -421,6 +429,10 @@ export function AgentDetail() {
         crumbs.push({ label: `Run ${urlRunId.slice(0, 8)}` });
       } else if (activeView === "configuration") {
         crumbs.push({ label: "Configuration" });
+      } else if (activeView === "instructions") {
+        crumbs.push({ label: "Instructions" });
+      } else if (activeView === "skills") {
+        crumbs.push({ label: "Skills" });
       } else if (activeView === "automation") {
         crumbs.push({ label: "Automation" });
       } else if (activeView === "runs") {
@@ -452,7 +464,8 @@ export function AgentDetail() {
     return <Navigate to={`/agents/${canonicalAgentRef}/dashboard`} replace />;
   }
   const isPendingApproval = agent.status === "pending_approval";
-  const showConfigActionBar = activeView === "configuration" && (configDirty || configSaving);
+  const showConfigActionBar =
+    (activeView === "configuration" || activeView === "instructions") && (configDirty || configSaving);
 
   return (
     <div className={cn("space-y-6", isMobile && showConfigActionBar && "pb-24")}>
@@ -580,6 +593,8 @@ export function AgentDetail() {
             items={[
               { value: "dashboard", label: "Dashboard" },
               { value: "configuration", label: "Configuration" },
+              { value: "instructions", label: "Instructions" },
+              { value: "skills", label: "Skills" },
               { value: "automation", label: "Automation" },
               { value: "runs", label: "Runs" },
             ]}
@@ -689,6 +704,21 @@ export function AgentDetail() {
             }
           }}
         />
+      )}
+
+      {activeView === "instructions" && (
+        <PromptsTab
+          agent={agent}
+          companyId={resolvedCompanyId ?? undefined}
+          onDirtyChange={setConfigDirty}
+          onSaveActionChange={setSaveConfigAction}
+          onCancelActionChange={setCancelConfigAction}
+          onSavingChange={setConfigSaving}
+        />
+      )}
+
+      {activeView === "skills" && resolvedCompanyId && (
+        <AgentSkillsPanel companyId={resolvedCompanyId} agentId={agent.id} />
       )}
 
       {activeView === "automation" && (

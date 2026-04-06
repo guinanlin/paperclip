@@ -49,6 +49,7 @@ export const sessionCodec: AdapterSessionCodec = {
 };
 
 export { execute } from "./execute.js";
+export { listPiSkills, syncPiSkills } from "./skill-sync.js";
 export { testEnvironment } from "./test.js";
 export {
   listPiModels,

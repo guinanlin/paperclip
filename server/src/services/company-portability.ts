@@ -17,6 +17,7 @@ import type {
 import { normalizeAgentUrlKey, portabilityManifestSchema } from "@paperclipai/shared";
 import { notFound, unprocessable } from "../errors.js";
 import { accessService } from "./access.js";
+import { agentInstructionsService } from "./agent-instructions.js";
 import { agentService } from "./agents.js";
 import { companyService } from "./companies.js";
 
@@ -188,7 +189,17 @@ function normalizePortableConfig(
   const next: Record<string, unknown> = {};
 
   for (const [key, entry] of Object.entries(input)) {
-    if (key === "cwd" || key === "instructionsFilePath") continue;
+    if (
+      key === "cwd"
+      || key === "instructionsFilePath"
+      || key === "instructionsBundleMode"
+      || key === "instructionsRootPath"
+      || key === "instructionsEntryFile"
+      || key === "promptTemplate"
+      || key === "bootstrapPromptTemplate"
+    ) {
+      continue;
+    }
     if (key === "env") {
       next[key] = normalizePortableEnv(agentSlug, entry, requiredSecrets);
       continue;
@@ -433,51 +444,6 @@ function resolveRawGitHubUrl(owner: string, repo: string, ref: string, filePath:
   return `https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${normalizedFilePath}`;
 }
 
-async function readAgentInstructions(agent: AgentLike): Promise<{ body: string; warning: string | null }> {
-  const config = agent.adapterConfig as Record<string, unknown>;
-  const instructionsFilePath = asString(config.instructionsFilePath);
-  if (instructionsFilePath) {
-    const workspaceCwd = asString(process.env.PAPERCLIP_WORKSPACE_CWD);
-    const candidates = new Set<string>();
-    if (path.isAbsolute(instructionsFilePath)) {
-      candidates.add(instructionsFilePath);
-    } else {
-      if (workspaceCwd) candidates.add(path.resolve(workspaceCwd, instructionsFilePath));
-      candidates.add(path.resolve(process.cwd(), instructionsFilePath));
-    }
-
-    for (const candidate of candidates) {
-      try {
-        const stat = await fs.stat(candidate);
-        if (!stat.isFile() || stat.size > 1024 * 1024) continue;
-        const body = await Promise.race([
-          fs.readFile(candidate, "utf8"),
-          new Promise<string>((_, reject) => {
-            setTimeout(() => reject(new Error("timed out reading instructions file")), 1500);
-          }),
-        ]);
-        return { body, warning: null };
-      } catch {
-        // try next candidate
-      }
-    }
-  }
-  const promptTemplate = asString(config.promptTemplate);
-  if (promptTemplate) {
-    const warning = instructionsFilePath
-      ? `Agent ${agent.name} instructionsFilePath was not readable; fell back to promptTemplate.`
-      : null;
-    return {
-      body: promptTemplate,
-      warning,
-    };
-  }
-  return {
-    body: "_No AGENTS instructions were resolved from current agent config._",
-    warning: `Agent ${agent.name} has no resolvable instructionsFilePath/promptTemplate; exported placeholder AGENTS.md.`,
-  };
-}
-
 export function companyPortabilityService(db: Db) {
   const companies = companyService(db);
   const agents = agentService(db);
@@ -615,11 +581,13 @@ export function companyPortabilityService(db: Db) {
     }
 
     if (include.agents) {
+      const instructionsExporter = agentInstructionsService();
       for (const agent of agentRows) {
         const slug = idToSlug.get(agent.id)!;
-        const instructions = await readAgentInstructions(agent);
-        if (instructions.warning) warnings.push(instructions.warning);
-        const agentPath = `agents/${slug}/AGENTS.md`;
+        const exportedInstructions = await instructionsExporter.exportFiles(agent);
+        warnings.push(...exportedInstructions.warnings);
+        const entryFile = exportedInstructions.entryFile;
+        const agentPath = `agents/${slug}/${entryFile}`;
 
         const secretStart = requiredSecrets.length;
         const adapterDefaultRules = ADAPTER_DEFAULT_RULES_BY_TYPE[agent.adapterType] ?? [];
@@ -645,23 +613,30 @@ export function companyPortabilityService(db: Db) {
         );
         const reportsToSlug = agent.reportsTo ? (idToSlug.get(agent.reportsTo) ?? null) : null;
 
-        files[agentPath] = buildMarkdown(
-          {
-            name: agent.name,
-            slug,
-            role: agent.role,
-            adapterType: agent.adapterType,
-            kind: "agent",
-            icon: agent.icon ?? null,
-            capabilities: agent.capabilities ?? null,
-            reportsTo: reportsToSlug,
-            runtimeConfig: portableRuntimeConfig,
-            permissions: portablePermissions,
-            adapterConfig: portableAdapterConfig,
-            requiredSecrets: agentRequiredSecrets,
-          },
-          instructions.body,
-        );
+        for (const [relativePath, content] of Object.entries(exportedInstructions.files)) {
+          const targetPath = `agents/${slug}/${relativePath}`;
+          if (relativePath === entryFile) {
+            files[targetPath] = buildMarkdown(
+              {
+                name: agent.name,
+                slug,
+                role: agent.role,
+                adapterType: agent.adapterType,
+                kind: "agent",
+                icon: agent.icon ?? null,
+                capabilities: agent.capabilities ?? null,
+                reportsTo: reportsToSlug,
+                runtimeConfig: portableRuntimeConfig,
+                permissions: portablePermissions,
+                adapterConfig: portableAdapterConfig,
+                requiredSecrets: agentRequiredSecrets,
+              },
+              content,
+            );
+          } else {
+            files[targetPath] = content;
+          }
+        }
 
         manifest.agents.push({
           slug,
@@ -914,6 +889,9 @@ export function companyPortabilityService(db: Db) {
           promptTemplate: markdown.body || asString((manifestAgent.adapterConfig as Record<string, unknown>).promptTemplate) || "",
         } as Record<string, unknown>;
         delete adapterConfig.instructionsFilePath;
+        delete adapterConfig.instructionsBundleMode;
+        delete adapterConfig.instructionsRootPath;
+        delete adapterConfig.instructionsEntryFile;
         const patch = {
           name: planAgent.plannedName,
           role: manifestAgent.role,

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import type { Db } from "@paperclipai/db";
 import {
   agents,
@@ -66,6 +66,11 @@ export interface IssueFilters {
   parentId?: string;
   labelId?: string;
   q?: string;
+  /** When set, only issues with this origin_kind (e.g. routine_execution). */
+  originKind?: string;
+  originId?: string;
+  /** If true, include routine_execution issues in the default list (otherwise hidden unless origin filters set). */
+  includeRoutineExecutions?: boolean;
 }
 
 type IssueRow = typeof issues.$inferSelect;
@@ -508,6 +513,15 @@ export function issueService(db: Db) {
           .where(and(eq(issueLabels.companyId, companyId), eq(issueLabels.labelId, filters.labelId)));
         if (labeledIssueIds.length === 0) return [];
         conditions.push(inArray(issues.id, labeledIssueIds.map((row) => row.issueId)));
+      }
+      if (filters?.originKind) {
+        conditions.push(eq(issues.originKind, filters.originKind));
+      }
+      if (filters?.originId) {
+        conditions.push(eq(issues.originId, filters.originId));
+      }
+      if (!filters?.includeRoutineExecutions && !filters?.originKind && !filters?.originId) {
+        conditions.push(ne(issues.originKind, "routine_execution"));
       }
       if (hasSearch) {
         conditions.push(

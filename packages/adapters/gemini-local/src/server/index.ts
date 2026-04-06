@@ -1,4 +1,5 @@
 export { execute } from "./execute.js";
+export { listGeminiSkills, syncGeminiSkills } from "./skill-sync.js";
 export { testEnvironment } from "./test.js";
 export {
   parseGeminiJsonl,

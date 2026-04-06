@@ -333,6 +333,9 @@ export function secretService(db: Db) {
       return { env: resolved, secretKeys };
     },
 
+    resolveSecretValue: (companyId: string, secretId: string, version: number | "latest") =>
+      resolveSecretValue(companyId, secretId, version),
+
     resolveAdapterConfigForRuntime: async (companyId: string, adapterConfig: Record<string, unknown>): Promise<{ config: Record<string, unknown>; secretKeys: Set<string> }> => {
       const resolved = { ...adapterConfig };
       const secretKeys = new Set<string>();

@@ -28,6 +28,7 @@ export const AGENT_ADAPTER_TYPES = [
   "codex_local",
   "opencode_local",
   "pi_local",
+  "gemini_local",
   "cursor",
   "openclaw_gateway",
 ] as const;
@@ -124,6 +125,40 @@ export type IssuePriority = (typeof ISSUE_PRIORITIES)[number];
 export const ISSUE_EXPECTED_OUTPUT_TYPES = ["text", "document", "code"] as const;
 export type IssueExpectedOutputType = (typeof ISSUE_EXPECTED_OUTPUT_TYPES)[number];
 
+export const ISSUE_ORIGIN_KINDS = ["manual", "routine_execution"] as const;
+export type IssueOriginKind = (typeof ISSUE_ORIGIN_KINDS)[number];
+
+export const ROUTINE_STATUSES = ["active", "paused", "archived"] as const;
+export type RoutineStatus = (typeof ROUTINE_STATUSES)[number];
+
+export const ROUTINE_CONCURRENCY_POLICIES = ["coalesce_if_active", "always_enqueue", "skip_if_active"] as const;
+export type RoutineConcurrencyPolicy = (typeof ROUTINE_CONCURRENCY_POLICIES)[number];
+
+export const ROUTINE_CATCH_UP_POLICIES = ["skip_missed", "enqueue_missed_with_cap"] as const;
+export type RoutineCatchUpPolicy = (typeof ROUTINE_CATCH_UP_POLICIES)[number];
+
+export const ROUTINE_TRIGGER_KINDS = ["schedule", "webhook", "api"] as const;
+export type RoutineTriggerKind = (typeof ROUTINE_TRIGGER_KINDS)[number];
+
+export const ROUTINE_TRIGGER_SIGNING_MODES = ["bearer", "hmac_sha256"] as const;
+export type RoutineTriggerSigningMode = (typeof ROUTINE_TRIGGER_SIGNING_MODES)[number];
+
+export const ROUTINE_VARIABLE_TYPES = ["text", "textarea", "number", "boolean", "select"] as const;
+export type RoutineVariableType = (typeof ROUTINE_VARIABLE_TYPES)[number];
+
+export const ROUTINE_RUN_STATUSES = [
+  "received",
+  "coalesced",
+  "skipped",
+  "issue_created",
+  "completed",
+  "failed",
+] as const;
+export type RoutineRunStatus = (typeof ROUTINE_RUN_STATUSES)[number];
+
+export const ROUTINE_RUN_SOURCES = ["schedule", "manual", "api", "webhook"] as const;
+export type RoutineRunSource = (typeof ROUTINE_RUN_SOURCES)[number];
+
 export const GOAL_LEVELS = ["company", "team", "agent", "task"] as const;
 export type GoalLevel = (typeof GOAL_LEVELS)[number];
 
@@ -152,7 +187,7 @@ export const PROJECT_COLORS = [
   "#3b82f6", // blue
 ] as const;
 
-export const APPROVAL_TYPES = ["hire_agent", "approve_ceo_strategy"] as const;
+export const APPROVAL_TYPES = ["hire_agent", "approve_ceo_strategy", "budget_override_required"] as const;
 export type ApprovalType = (typeof APPROVAL_TYPES)[number];
 
 export const APPROVAL_STATUSES = [
@@ -220,6 +255,16 @@ export const LIVE_EVENT_TYPES = [
   "plugin.worker.restarted",
 ] as const;
 export type LiveEventType = (typeof LIVE_EVENT_TYPES)[number];
+
+export const BILLING_TYPES = [
+  "metered_api",
+  "subscription_included",
+  "subscription_overage",
+  "credits",
+  "fixed",
+  "unknown",
+] as const;
+export type BillingType = (typeof BILLING_TYPES)[number];
 
 export const PRINCIPAL_TYPES = ["user", "agent"] as const;
 export type PrincipalType = (typeof PRINCIPAL_TYPES)[number];

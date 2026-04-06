@@ -27,6 +27,9 @@ export {
   createAgentHireSchema,
   updateAgentSchema,
   updateAgentInstructionsPathSchema,
+  agentInstructionsBundleModeSchema,
+  updateAgentInstructionsBundleSchema,
+  upsertAgentInstructionsFileSchema,
   createAgentKeySchema,
   wakeAgentSchema,
   resetAgentSessionSchema,
@@ -37,6 +40,8 @@ export {
   type CreateAgentHire,
   type UpdateAgent,
   type UpdateAgentInstructionsPath,
+  type UpdateAgentInstructionsBundle,
+  type UpsertAgentInstructionsFile,
   type CreateAgentKey,
   type WakeAgent,
   type ResetAgentSession,
@@ -109,6 +114,22 @@ export {
 } from "./goal.js";
 
 export {
+  createRoutineSchema,
+  updateRoutineSchema,
+  createRoutineTriggerSchema,
+  updateRoutineTriggerSchema,
+  routineVariableSchema,
+  runRoutineSchema,
+  rotateRoutineTriggerSecretSchema,
+  type CreateRoutine,
+  type UpdateRoutine,
+  type CreateRoutineTrigger,
+  type UpdateRoutineTrigger,
+  type RunRoutine,
+  type RotateRoutineTriggerSecret,
+} from "./routine.js";
+
+export {
   createApprovalSchema,
   resolveApprovalSchema,
   requestApprovalRevisionSchema,
@@ -140,6 +161,22 @@ export {
   type CreateCostEvent,
   type UpdateBudget,
 } from "./cost.js";
+
+export {
+  createCompanySkillSchema,
+  updateCompanySkillSchema,
+  attachAgentSkillSchema,
+  type CreateCompanySkill,
+  type UpdateCompanySkill,
+  type AttachAgentSkill,
+} from "./skills.js";
+
+export {
+  createBudgetPolicySchema,
+  updateBudgetPolicySchema,
+  type CreateBudgetPolicyInput,
+  type UpdateBudgetPolicyInput,
+} from "./budget_policies.js";
 
 export {
   createAssetImageMetadataSchema,
