@@ -25,6 +25,7 @@ import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { logger } from "./middleware/logger.js";
 import { setupLiveEventsWebSocketServer } from "./realtime/live-events-ws.js";
+import { setupAndroidChannelWebSocketServer } from "./realtime/android-channel-ws.js";
 import {
   heartbeatService,
   reconcilePersistedRuntimeServicesOnStartup,
@@ -510,6 +511,7 @@ export async function startServer(): Promise<StartedServer> {
   process.env.PAPERCLIP_LISTEN_PORT = String(listenPort);
   process.env.PAPERCLIP_API_URL = `http://${runtimeApiHost}:${listenPort}`;
   
+  setupAndroidChannelWebSocketServer(server, db as any);
   setupLiveEventsWebSocketServer(server, db as any, {
     deploymentMode: config.deploymentMode,
     resolveSessionFromHeaders,

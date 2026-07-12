@@ -27,10 +27,6 @@ function dedupeModels(models: AdapterModel[]): AdapterModel[] {
   return deduped;
 }
 
-function filterOutUnsupportedPseudoModels(models: AdapterModel[]): AdapterModel[] {
-  return models.filter((model) => model.id.trim().toLowerCase() !== "auto");
-}
-
 function sanitizeModelId(raw: string): string {
   return raw
     .trim()
@@ -146,7 +142,7 @@ export async function listCursorModels(): Promise<AdapterModel[]> {
 
   const discovered = fetchCursorModelsFromCli();
   if (discovered.length > 0) {
-    const merged = dedupeModels(filterOutUnsupportedPseudoModels(discovered));
+    const merged = dedupeModels(discovered);
     cached = {
       expiresAt: now + CURSOR_MODELS_CACHE_TTL_MS,
       models: merged,
@@ -158,7 +154,7 @@ export async function listCursorModels(): Promise<AdapterModel[]> {
     return cached.models;
   }
 
-  return dedupeModels(filterOutUnsupportedPseudoModels(cursorFallbackModels));
+  return dedupeModels(cursorFallbackModels);
 }
 
 export function resetCursorModelsCacheForTests() {

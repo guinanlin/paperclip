@@ -1,3 +1,4 @@
+import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -40,6 +41,61 @@ function parseModelProvider(model: string | null): string | null {
   const trimmed = model.trim();
   if (!trimmed.includes("/")) return null;
   return trimmed.slice(0, trimmed.indexOf("/")).trim() || null;
+}
+
+async function defaultOpenCodeCommand(commandConfig: unknown): Promise<string> {
+  const configured = typeof commandConfig === "string" ? commandConfig.trim() : "";
+  const envOverride =
+    typeof process.env.PAPERCLIP_OPENCODE_COMMAND === "string"
+      ? process.env.PAPERCLIP_OPENCODE_COMMAND.trim()
+      : "";
+  const command = configured || envOverride;
+  if (command && command !== "opencode") return command;
+
+  const localInstall = path.join(os.homedir(), ".opencode", "bin", "opencode");
+  const exists = await fs.access(localInstall, fsConstants.X_OK).then(() => true).catch(() => false);
+  if (exists) return localInstall;
+
+  return command || "opencode";
+}
+
+function directoryPermissionPattern(dir: string): string | null {
+  const trimmed = dir.trim();
+  if (!trimmed || !path.isAbsolute(trimmed)) return null;
+  return `${trimmed.endsWith(path.sep) ? trimmed : `${trimmed}${path.sep}`}*`;
+}
+
+function mergeOpenCodeConfigContentWithExternalDirs(
+  existingContent: string | undefined,
+  dirs: string[],
+): string | null {
+  const patterns = dirs
+    .map(directoryPermissionPattern)
+    .filter((value): value is string => Boolean(value));
+  if (patterns.length === 0) return existingContent ?? null;
+
+  let config: Record<string, unknown> = {};
+  if (existingContent && existingContent.trim().length > 0) {
+    try {
+      config = JSON.parse(existingContent) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
+
+  if (config.permission === "allow") {
+    return existingContent ?? JSON.stringify(config);
+  }
+
+  const permission = parseObject(config.permission);
+  const externalDirectory = parseObject(permission.external_directory);
+  for (const pattern of patterns) {
+    externalDirectory[pattern] = "allow";
+  }
+  permission.external_directory = externalDirectory;
+  config.permission = permission;
+
+  return JSON.stringify(config);
 }
 
 function claudeSkillsHome(): string {
@@ -90,7 +146,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     config.promptTemplate,
     "You are agent {{agent.id}} ({{agent.name}}). Continue your Paperclip work.",
   );
-  const command = asString(config.command, "opencode");
+  const command = await defaultOpenCodeCommand(config.command);
   const model = asString(config.model, "").trim();
   const variant = asString(config.variant, "").trim();
 
@@ -106,6 +162,9 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         (value): value is Record<string, unknown> => typeof value === "object" && value !== null,
       )
     : [];
+  const workspaceHintCwds = workspaceHints
+    .map((workspace) => asString(workspace.cwd, ""))
+    .filter(Boolean);
   const configuredCwd = asString(config.cwd, "");
   const useConfiguredInsteadOfAgentHome = workspaceSource === "agent_home" && configuredCwd.length > 0;
   const effectiveWorkspaceCwd = useConfiguredInsteadOfAgentHome ? "" : workspaceCwd;
@@ -161,11 +220,27 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   if (!hasExplicitApiKey && authToken) {
     env.PAPERCLIP_API_KEY = authToken;
   }
+
+  const instructionsFilePath = asString(config.instructionsFilePath, "").trim();
+  const resolvedInstructionsFilePath = instructionsFilePath
+    ? path.resolve(cwd, instructionsFilePath)
+    : "";
+  const instructionsDir = resolvedInstructionsFilePath ? `${path.dirname(resolvedInstructionsFilePath)}/` : "";
+
   const runtimeEnv = Object.fromEntries(
     Object.entries(ensurePathInEnv({ ...process.env, ...env })).filter(
       (entry): entry is [string, string] => typeof entry[1] === "string",
     ),
   );
+  // OpenCode consults PWD for project/config resolution; keep it aligned with spawn cwd.
+  runtimeEnv.PWD = cwd;
+  const openCodeConfigContent = mergeOpenCodeConfigContentWithExternalDirs(
+    runtimeEnv.OPENCODE_CONFIG_CONTENT,
+    [instructionsDir, agentHome, configuredCwd, ...workspaceHintCwds],
+  );
+  if (openCodeConfigContent) {
+    runtimeEnv.OPENCODE_CONFIG_CONTENT = openCodeConfigContent;
+  }
   await ensureCommandResolvable(command, cwd, runtimeEnv);
 
   await ensureOpenCodeModelConfiguredAndAvailable({
@@ -197,11 +272,6 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     );
   }
 
-  const instructionsFilePath = asString(config.instructionsFilePath, "").trim();
-  const resolvedInstructionsFilePath = instructionsFilePath
-    ? path.resolve(cwd, instructionsFilePath)
-    : "";
-  const instructionsDir = resolvedInstructionsFilePath ? `${path.dirname(resolvedInstructionsFilePath)}/` : "";
   let instructionsPrefix = "";
   if (resolvedInstructionsFilePath) {
     try {

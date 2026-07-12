@@ -260,6 +260,20 @@
       "when": 1775445737708,
       "tag": "0036_many_tombstone",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1781291851871,
+      "tag": "0037_mute_valkyrie",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1781292722099,
+      "tag": "0038_huge_mandrill",
+      "breakpoints": true
     }
   ]
 }

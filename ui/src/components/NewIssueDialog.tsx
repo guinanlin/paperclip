@@ -792,6 +792,20 @@ export function NewIssueDialog() {
             searchText,
           };
         });
+        const teamIds = new Set(teamOpts.map((option) => option.id));
+        if (selectedAssigneeAgentId) {
+          const selectedAgentId = assigneeValueFromSelection({ assigneeAgentId: selectedAssigneeAgentId });
+          if (!teamIds.has(selectedAgentId)) {
+            const selectedAgent = agentMap.get(selectedAssigneeAgentId);
+            teamOpts.unshift({
+              id: selectedAgentId,
+              label: selectedAgent?.name ?? selectedAssigneeAgentId.slice(0, 8),
+              searchText: selectedAgent
+                ? `${selectedAgent.name} ${selectedAgent.role} ${selectedAgent.title ?? ""}`.trim()
+                : selectedAssigneeAgentId,
+            });
+          }
+        }
         return [...userOpts, ...teamOpts];
       }
       return [
@@ -806,7 +820,15 @@ export function NewIssueDialog() {
         })),
       ];
     },
-    [agents, currentUserId, recentAssigneeIds, useProjectTeamForAssignee, projectTeamMembers, projectId],
+    [
+      agents,
+      currentUserId,
+      recentAssigneeIds,
+      useProjectTeamForAssignee,
+      projectTeamMembers,
+      projectId,
+      selectedAssigneeAgentId,
+    ],
   );
   const projectOptions = useMemo<InlineEntityOption[]>(
     () =>

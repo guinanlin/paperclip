@@ -1,4 +1,8 @@
 import { createHash } from "node:crypto";
+import { constants as fsConstants } from "node:fs";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import type { AdapterModel } from "@paperclipai/adapter-utils";
 import {
   asString,
@@ -9,13 +13,21 @@ import {
 const MODELS_CACHE_TTL_MS = 60_000;
 const MODELS_DISCOVERY_TIMEOUT_MS = 20_000;
 
-function resolveOpenCodeCommand(input: unknown): string {
+async function resolveOpenCodeCommand(input: unknown): Promise<string> {
+  const configured = typeof input === "string" ? input.trim() : "";
   const envOverride =
     typeof process.env.PAPERCLIP_OPENCODE_COMMAND === "string" &&
     process.env.PAPERCLIP_OPENCODE_COMMAND.trim().length > 0
       ? process.env.PAPERCLIP_OPENCODE_COMMAND.trim()
-      : "opencode";
-  return asString(input, envOverride);
+      : "";
+  const command = configured || envOverride;
+  if (command && command !== "opencode") return command;
+
+  const localInstall = path.join(os.homedir(), ".opencode", "bin", "opencode");
+  const exists = await fs.access(localInstall, fsConstants.X_OK).then(() => true).catch(() => false);
+  if (exists) return localInstall;
+
+  return command || "opencode";
 }
 
 const discoveryCache = new Map<string, { expiresAt: number; models: AdapterModel[] }>();
@@ -104,7 +116,7 @@ export async function discoverOpenCodeModels(input: {
   cwd?: unknown;
   env?: unknown;
 } = {}): Promise<AdapterModel[]> {
-  const command = resolveOpenCodeCommand(input.command);
+  const command = await resolveOpenCodeCommand(input.command);
   const cwd = asString(input.cwd, process.cwd());
   const env = normalizeEnv(input.env);
   const runtimeEnv = normalizeEnv(ensurePathInEnv({ ...process.env, ...env }));
@@ -138,7 +150,7 @@ export async function discoverOpenCodeModelsCached(input: {
   cwd?: unknown;
   env?: unknown;
 } = {}): Promise<AdapterModel[]> {
-  const command = resolveOpenCodeCommand(input.command);
+  const command = await resolveOpenCodeCommand(input.command);
   const cwd = asString(input.cwd, process.cwd());
   const env = normalizeEnv(input.env);
   const key = discoveryCacheKey(command, cwd, env);

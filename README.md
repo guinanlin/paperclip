@@ -191,6 +191,18 @@ pnpm dev
 
 This starts the API server at `http://localhost:3100`. An embedded PostgreSQL database is created automatically — no setup required.
 
+If you need Android pairing over LAN/VPN during local development, start dev with:
+
+```bash
+export HOST=0.0.0.0
+export PAPERCLIP_LOCAL_TRUSTED_ALLOW_NON_LOOPBACK_BIND=true
+export ANDROID_BIND_PAIRING_ALLOW_VPN_HOST=true
+export ANDROID_BIND_PAIRING_LAN_HOST=10.253.32.200
+pnpm dev
+```
+
+Replace `10.253.32.200` with your machine's reachable LAN/VPN IP.
+
 > **Why run onboard?** It writes `PAPERCLIP_AGENT_JWT_SECRET` to `.env` next to your config. Without it, agent heartbeat runs do not receive an API key and get 401 on `/api/agents/me` (they cannot checkout tasks, comment, or submit hires).
 >
 > **Requirements:** Node.js 20+, pnpm 9.15+

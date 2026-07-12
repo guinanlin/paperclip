@@ -12,6 +12,12 @@ export { agentRuntimeState } from "./agent_runtime_state.js";
 export { agentTaskSessions } from "./agent_task_sessions.js";
 export { agentWakeupRequests } from "./agent_wakeup_requests.js";
 export { agentCommandSets } from "./agent_command_sets.js";
+export {
+  agentChannelConnections,
+  agentChannelPairSessions,
+  agentChannelDevices,
+  agentChannelPeers,
+} from "./agent_channels.js";
 export { projects } from "./projects.js";
 export { projectWorkspaces } from "./project_workspaces.js";
 export { projectTeamMembers } from "./project_team_members.js";

@@ -1,3 +1,7 @@
+import { constants as fsConstants } from "node:fs";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import type {
   AdapterEnvironmentCheck,
   AdapterEnvironmentTestContext,
@@ -50,12 +54,28 @@ function normalizeEnv(input: unknown): Record<string, string> {
 const OPENCODE_AUTH_REQUIRED_RE =
   /(?:auth(?:entication)?\s+required|api\s*key|invalid\s*api\s*key|not\s+logged\s+in|opencode\s+auth\s+login|free\s+usage\s+exceeded)/i;
 
+async function defaultOpenCodeCommand(commandConfig: unknown): Promise<string> {
+  const configured = typeof commandConfig === "string" ? commandConfig.trim() : "";
+  const envOverride =
+    typeof process.env.PAPERCLIP_OPENCODE_COMMAND === "string"
+      ? process.env.PAPERCLIP_OPENCODE_COMMAND.trim()
+      : "";
+  const command = configured || envOverride;
+  if (command && command !== "opencode") return command;
+
+  const localInstall = path.join(os.homedir(), ".opencode", "bin", "opencode");
+  const exists = await fs.access(localInstall, fsConstants.X_OK).then(() => true).catch(() => false);
+  if (exists) return localInstall;
+
+  return command || "opencode";
+}
+
 export async function testEnvironment(
   ctx: AdapterEnvironmentTestContext,
 ): Promise<AdapterEnvironmentTestResult> {
   const checks: AdapterEnvironmentCheck[] = [];
   const config = parseObject(ctx.config);
-  const command = asString(config.command, "opencode");
+  const command = await defaultOpenCodeCommand(config.command);
   const cwd = asString(config.cwd, process.cwd());
 
   try {

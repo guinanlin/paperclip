@@ -14,6 +14,7 @@ import { useDialog } from "../context/DialogContext";
 import { useToast } from "../context/ToastContext";
 import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
+import { AgentBindsTab } from "../components/AgentBindsTab";
 import { AgentConfigForm } from "../components/AgentConfigForm";
 import { PageTabBar } from "../components/PageTabBar";
 import { AgentSkillsPanel } from "../components/AgentSkillsPanel";
@@ -181,7 +182,7 @@ function scrollToContainerBottom(container: ScrollContainer, behavior: ScrollBeh
   container.scrollTo({ top: container.scrollHeight, behavior });
 }
 
-type AgentDetailView = "dashboard" | "instructions" | "configuration" | "skills" | "automation" | "runs";
+type AgentDetailView = "dashboard" | "instructions" | "configuration" | "skills" | "automation" | "runs" | "binds";
 
 function parseAgentDetailView(value: string | null): AgentDetailView {
   if (value === "instructions" || value === "prompts") return "instructions";
@@ -189,6 +190,7 @@ function parseAgentDetailView(value: string | null): AgentDetailView {
   if (value === "skills") return "skills";
   if (value === "automation") return "automation";
   if (value === "runs") return value;
+  if (value === "binds") return "binds";
   return "dashboard";
 }
 
@@ -330,6 +332,8 @@ export function AgentDetail() {
             ? "skills"
             : activeView === "runs"
               ? "runs"
+              : activeView === "binds"
+                ? "binds"
               : activeView === "automation"
                 ? "automation"
                 : "dashboard";
@@ -435,6 +439,8 @@ export function AgentDetail() {
         crumbs.push({ label: "Skills" });
       } else if (activeView === "automation") {
         crumbs.push({ label: "Automation" });
+      } else if (activeView === "binds") {
+        crumbs.push({ label: "Binds" });
       } else if (activeView === "runs") {
         crumbs.push({ label: "Runs" });
       } else {
@@ -597,6 +603,7 @@ export function AgentDetail() {
               { value: "skills", label: "Skills" },
               { value: "automation", label: "Automation" },
               { value: "runs", label: "Runs" },
+              { value: "binds", label: "Binds" },
             ]}
             value={activeView}
             onValueChange={(value) => navigate(`/agents/${canonicalAgentRef}/${value}`)}
@@ -737,6 +744,14 @@ export function AgentDetail() {
           agentRouteId={canonicalAgentRef}
           selectedRunId={urlRunId ?? null}
           adapterType={agent.adapterType}
+        />
+      )}
+
+      {activeView === "binds" && resolvedCompanyId && (
+        <AgentBindsTab
+          agentId={agent.id}
+          companyId={resolvedCompanyId}
+          agentName={agent.name}
         />
       )}
     </div>
@@ -1117,6 +1132,7 @@ function ConfigurationTab({
   onConfigSaved?: (updatedAgent: Agent) => void;
 }) {
   const queryClient = useQueryClient();
+  const { pushToast } = useToast();
   const [awaitingRefreshAfterSave, setAwaitingRefreshAfterSave] = useState(false);
   const lastAgentRef = useRef(agent);
 
@@ -1140,7 +1156,13 @@ function ConfigurationTab({
       queryClient.invalidateQueries({ queryKey: queryKeys.agents.configRevisions(agent.id) });
       onConfigSaved?.(updatedAgent);
     },
-    onError: () => {
+    onError: (err) => {
+      pushToast({
+        tone: "error",
+        title: "Could not save configuration",
+        body: err instanceof Error ? err.message : String(err),
+        dedupeKey: "agent-config-save-error",
+      });
       setAwaitingRefreshAfterSave(false);
     },
   });

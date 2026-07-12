@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { isOpenCodeUnknownSessionError, parseOpenCodeJsonl } from "@paperclipai/adapter-opencode-local/server";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import {
+  execute,
+  isOpenCodeUnknownSessionError,
+  parseOpenCodeJsonl,
+  resetOpenCodeModelsCacheForTests,
+} from "@paperclipai/adapter-opencode-local/server";
 import { parseOpenCodeStdoutLine } from "@paperclipai/adapter-opencode-local/ui";
 import { printOpenCodeStreamEvent } from "@paperclipai/adapter-opencode-local/cli";
 
@@ -54,6 +62,179 @@ describe("opencode_local stale session detection", () => {
       "NotFoundError: Resource not found: /Users/test/.local/share/opencode/storage/session/project/ses_missing.json";
 
     expect(isOpenCodeUnknownSessionError("", stderr)).toBe(true);
+  });
+});
+
+describe("opencode_local execution environment", () => {
+  it("aligns PWD with the configured workspace cwd", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-opencode-pwd-"));
+    const cwd = path.join(root, "workspace");
+    const binDir = path.join(root, "bin");
+    const fakeOpencode = path.join(binDir, "opencode");
+    const pwdRecordPath = path.join(root, "pwd.json");
+    const originalPwd = process.env.PWD;
+
+    await fs.mkdir(cwd, { recursive: true });
+    await fs.mkdir(binDir, { recursive: true });
+    await fs.writeFile(
+      fakeOpencode,
+      [
+        "#!/usr/bin/env node",
+        "const fs = require('node:fs');",
+        "const args = process.argv.slice(2);",
+        "if (args[0] === 'models') {",
+        "  console.log('opencode/big-pickle Big Pickle');",
+        "  process.exit(0);",
+        "}",
+        "if (args[0] === 'run') {",
+        "  fs.writeFileSync(process.env.PAPERCLIP_TEST_PWD_RECORD, JSON.stringify({ pwd: process.env.PWD, cwd: process.cwd() }));",
+        "  console.log(JSON.stringify({ type: 'text', part: { type: 'text', text: 'yes' } }));",
+        "  console.log(JSON.stringify({ type: 'step_finish', sessionID: 'ses_test', part: { reason: 'stop', tokens: { input: 1, output: 1, cache: { read: 0, write: 0 } } } }));",
+        "  process.exit(0);",
+        "}",
+        "process.exit(1);",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await fs.chmod(fakeOpencode, 0o755);
+
+    try {
+      process.env.PWD = "/paperclip/server";
+      resetOpenCodeModelsCacheForTests();
+
+      const result = await execute({
+        runId: "run-1",
+        agent: {
+          id: "agent-1",
+          companyId: "company-1",
+          name: "T70",
+          adapterType: "opencode_local",
+          adapterConfig: {},
+        },
+        runtime: {
+          sessionId: null,
+          sessionParams: null,
+          sessionDisplayId: null,
+          taskKey: null,
+        },
+        config: {
+          command: fakeOpencode,
+          model: "opencode/big-pickle",
+          env: {
+            PAPERCLIP_TEST_PWD_RECORD: pwdRecordPath,
+          },
+        },
+        context: {
+          paperclipWorkspace: {
+            cwd,
+            source: "project_primary",
+            workspaceId: "workspace-1",
+          },
+        },
+        onLog: async () => {},
+      });
+
+      expect(result.exitCode).toBe(0);
+      await expect(fs.readFile(pwdRecordPath, "utf8").then(JSON.parse)).resolves.toEqual({
+        pwd: cwd,
+        cwd,
+      });
+    } finally {
+      if (originalPwd === undefined) {
+        delete process.env.PWD;
+      } else {
+        process.env.PWD = originalPwd;
+      }
+      resetOpenCodeModelsCacheForTests();
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("injects OpenCode external-directory permission for the instructions directory", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-opencode-config-"));
+    const cwd = path.join(root, "workspace");
+    const agentDefaultCwd = path.join(root, "agent-default-workspace");
+    const instructionsDir = path.join(root, "agent-home");
+    const binDir = path.join(root, "bin");
+    const fakeOpencode = path.join(binDir, "opencode");
+    const configRecordPath = path.join(root, "opencode-config-content.json");
+
+    await fs.mkdir(cwd, { recursive: true });
+    await fs.mkdir(agentDefaultCwd, { recursive: true });
+    await fs.mkdir(instructionsDir, { recursive: true });
+    await fs.mkdir(binDir, { recursive: true });
+    await fs.writeFile(path.join(instructionsDir, "AGENTS.md"), "You are T70.\n", "utf8");
+    await fs.writeFile(
+      fakeOpencode,
+      [
+        "#!/usr/bin/env node",
+        "const fs = require('node:fs');",
+        "const args = process.argv.slice(2);",
+        "if (args[0] === 'models') {",
+        "  console.log('opencode/big-pickle Big Pickle');",
+        "  process.exit(0);",
+        "}",
+        "if (args[0] === 'run') {",
+        "  fs.writeFileSync(process.env.PAPERCLIP_TEST_CONFIG_RECORD, process.env.OPENCODE_CONFIG_CONTENT || '');",
+        "  console.log(JSON.stringify({ type: 'text', part: { type: 'text', text: 'yes' } }));",
+        "  console.log(JSON.stringify({ type: 'step_finish', sessionID: 'ses_test', part: { reason: 'stop', tokens: { input: 1, output: 1, cache: { read: 0, write: 0 } } } }));",
+        "  process.exit(0);",
+        "}",
+        "process.exit(1);",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    await fs.chmod(fakeOpencode, 0o755);
+
+    try {
+      resetOpenCodeModelsCacheForTests();
+
+      const result = await execute({
+        runId: "run-2",
+        agent: {
+          id: "agent-1",
+          companyId: "company-1",
+          name: "T70",
+          adapterType: "opencode_local",
+          adapterConfig: {},
+        },
+        runtime: {
+          sessionId: null,
+          sessionParams: null,
+          sessionDisplayId: null,
+          taskKey: null,
+        },
+        config: {
+          command: fakeOpencode,
+          cwd: agentDefaultCwd,
+          model: "opencode/big-pickle",
+          instructionsFilePath: path.join(instructionsDir, "AGENTS.md"),
+          env: {
+            PAPERCLIP_TEST_CONFIG_RECORD: configRecordPath,
+          },
+        },
+        context: {
+          paperclipWorkspace: {
+            cwd,
+            source: "project_primary",
+            workspaceId: "workspace-1",
+          },
+        },
+        onLog: async () => {},
+      });
+
+      expect(result.exitCode).toBe(0);
+      const configContent = JSON.parse(await fs.readFile(configRecordPath, "utf8"));
+      expect(configContent.permission.external_directory).toMatchObject({
+        [`${instructionsDir}${path.sep}*`]: "allow",
+        [`${agentDefaultCwd}${path.sep}*`]: "allow",
+      });
+    } finally {
+      resetOpenCodeModelsCacheForTests();
+      await fs.rm(root, { recursive: true, force: true });
+    }
   });
 });
 

@@ -47,6 +47,13 @@ export type {
 } from "./issue.js";
 export type { Goal } from "./goal.js";
 export type {
+  AgentChannelDevice,
+  AndroidPairStartResult,
+  AndroidPairPollResult,
+  AndroidPairConfirmResult,
+  AndroidPairLookupResult,
+} from "./agent-channel.js";
+export type {
   Routine,
   RoutineVariable,
   RoutineVariableDefaultValue,

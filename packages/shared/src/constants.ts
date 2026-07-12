@@ -634,3 +634,13 @@ export const PLUGIN_BRIDGE_ERROR_CODES = [
   "UNKNOWN",
 ] as const;
 export type PluginBridgeErrorCode = (typeof PLUGIN_BRIDGE_ERROR_CODES)[number];
+
+export {
+  AGENT_CHANNEL_TYPES,
+  AGENT_CHANNEL_CONNECTION_STATUSES,
+  AGENT_CHANNEL_PAIR_STATUSES,
+  ANDROID_DEVICE_TOKEN_PREFIX,
+  type AgentChannelType,
+  type AgentChannelConnectionStatus,
+  type AgentChannelPairStatus,
+} from "./constants/agent-channels.js";

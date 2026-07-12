@@ -22,6 +22,10 @@ export const queryKeys = {
     instructionsBundle: (id: string) => ["agents", "instructions-bundle", id] as const,
     instructionsFile: (id: string, relativePath: string) =>
       ["agents", "instructions-bundle", id, "file", relativePath] as const,
+    androidDevices: (agentId: string, companyId: string) =>
+      ["agents", "android-devices", agentId, companyId] as const,
+    androidPairPoll: (agentId: string, loginId: string, companyId: string) =>
+      ["agents", "android-pair-poll", agentId, loginId, companyId] as const,
   },
   issues: {
     list: (companyId: string) => ["issues", companyId] as const,

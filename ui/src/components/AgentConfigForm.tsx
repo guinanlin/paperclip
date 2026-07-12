@@ -96,6 +96,27 @@ const emptyOverlay: Overlay = {
   runtime: {},
 };
 
+/**
+ * Fingerprint of persisted fields this form editors care about.
+ * Excludes updatedAt/status/lastHeartbeatAt so heartbeat or other status bumps don't wipe in-progress edits.
+ */
+function agentFormConfigBaselineKey(agent: Agent): string {
+  const baseline = {
+    id: agent.id,
+    name: agent.name,
+    role: agent.role,
+    title: agent.title,
+    reportsTo: agent.reportsTo,
+    capabilities: agent.capabilities,
+    adapterType: agent.adapterType,
+    adapterConfig: agent.adapterConfig ?? {},
+    runtimeConfig: agent.runtimeConfig ?? {},
+    budgetMonthlyCents: agent.budgetMonthlyCents,
+    metadata: agent.metadata ?? null,
+  };
+  return JSON.stringify(baseline);
+}
+
 /** Stable empty object used as fallback for missing env config to avoid new-object-per-render. */
 const EMPTY_ENV: Record<string, EnvBinding> = {};
 
@@ -204,17 +225,17 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
 
   // ---- Edit mode: overlay for dirty tracking ----
   const [overlay, setOverlay] = useState<Overlay>(emptyOverlay);
-  const agentRef = useRef<Agent | null>(null);
+  const lastAgentConfigBaselineRef = useRef<string | null>(null);
 
-  // Clear overlay when agent data refreshes (after save)
+  // Clear overlay only when persisted config/identity actually changes (e.g. after save), not on refetch or heartbeat-driven updatedAt.
   useEffect(() => {
-    if (!isCreate) {
-      if (agentRef.current !== null && props.agent !== agentRef.current) {
-        setOverlay({ ...emptyOverlay });
-      }
-      agentRef.current = props.agent;
+    if (mode !== "edit") return;
+    const key = agentFormConfigBaselineKey(props.agent);
+    if (lastAgentConfigBaselineRef.current !== null && lastAgentConfigBaselineRef.current !== key) {
+      setOverlay({ ...emptyOverlay });
     }
-  }, [isCreate, !isCreate ? props.agent : undefined]); // eslint-disable-line react-hooks/exhaustive-deps
+    lastAgentConfigBaselineRef.current = key;
+  }, [mode, mode === "edit" ? props.agent : undefined]);
 
   const isDirty = !isCreate && isOverlayDirty(overlay);
 
@@ -239,7 +260,9 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   }, []);
 
   const handleSave = useCallback(() => {
-    if (isCreate || !isDirty) return;
+    if (isCreate || !isDirty) {
+      return;
+    }
     const agent = props.agent;
     const patch: Record<string, unknown> = {};
 
@@ -372,9 +395,10 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
   });
 
   // Current model for display
-  const currentModelId = isCreate
+  const rawCurrentModelId = isCreate
     ? val!.model
     : eff("adapterConfig", "model", String(config.model ?? ""));
+  const currentModelId = adapterType === "cursor" && !rawCurrentModelId.trim() ? "auto" : rawCurrentModelId;
 
   const thinkingEffortKey =
     adapterType === "codex_local"
@@ -620,12 +644,29 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                   }
                   set!(nextValues);
                 } else {
-                  // Clear all adapter config and explicitly blank out model + effort/mode keys
-                  // so the old adapter's values don't bleed through via eff()
+                  // Reset adapter-specific fields, but keep cwd/env/instructions/prompt so PATCH
+                  // does not drop persisted paths the UI still shows via eff().
+                  const persisted = (props.agent.adapterConfig ?? {}) as Record<string, unknown>;
+                  const preserved: Record<string, unknown> = {};
+                  for (const key of [
+                    "cwd",
+                    "env",
+                    "instructionsBundleMode",
+                    "instructionsRootPath",
+                    "instructionsEntryFile",
+                    "instructionsFilePath",
+                    "agentsMdPath",
+                    "promptTemplate",
+                  ] as const) {
+                    if (key in persisted && persisted[key] !== undefined) {
+                      preserved[key] = persisted[key];
+                    }
+                  }
                   setOverlay((prev) => ({
                     ...prev,
                     adapterType: t,
                     adapterConfig: {
+                      ...preserved,
                       model:
                         t === "codex_local"
                           ? DEFAULT_CODEX_LOCAL_MODEL
@@ -765,9 +806,12 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                 }
                 open={modelOpen}
                 onOpenChange={setModelOpen}
-                allowDefault={adapterType !== "opencode_local" && adapterType !== "pi_local"}
+                allowDefault={
+                  adapterType !== "opencode_local" && adapterType !== "pi_local" && adapterType !== "cursor"
+                }
                 required={adapterType === "opencode_local" || adapterType === "pi_local"}
                 groupByProvider={adapterType === "opencode_local" || adapterType === "pi_local"}
+                allowAutoOption={adapterType === "cursor"}
               />
               {fetchedModelsError && (
                 <p className="text-xs text-destructive">
@@ -826,7 +870,7 @@ export function AgentConfigForm(props: AgentConfigFormProps) {
                   }}
                 />
               </Field>
-              <div className="rounded-md border border-sky-500/25 bg-sky-500/10 px-3 py-2 text-xs text-sky-100">
+              <div className="rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
                 Bootstrap prompt is only sent for fresh sessions. Put stable setup, habits, and longer reusable guidance here. Frequent changes reduce the value of session reuse because new sessions must replay it.
               </div>
               {adapterType === "claude_local" && (
@@ -1168,6 +1212,17 @@ function EnvVarEditor({
   const [sealError, setSealError] = useState<string | null>(null);
   const valueRef = useRef(value);
 
+  function findSecretIdByKeyName(key: string): string {
+    const normalized = key.trim();
+    if (!normalized) return "";
+    const exact = secrets.find((secret) => secret.name === normalized);
+    if (exact) return exact.id;
+    const insensitive = secrets.find(
+      (secret) => secret.name.toLowerCase() === normalized.toLowerCase(),
+    );
+    return insensitive?.id ?? "";
+  }
+
   // Sync when value identity changes (overlay reset after save)
   useEffect(() => {
     if (value !== valueRef.current) {
@@ -1269,12 +1324,15 @@ function EnvVarEditor({
             <select
               className={cn(inputClass, "flex-[1] bg-background")}
               value={row.source}
-              onChange={(e) =>
-                updateRow(i, {
-                  source: e.target.value === "secret" ? "secret" : "plain",
-                  ...(e.target.value === "plain" ? { secretId: "" } : {}),
-                })
-              }
+              onChange={(e) => {
+                const nextSource = e.target.value === "secret" ? "secret" : "plain";
+                if (nextSource === "plain") {
+                  updateRow(i, { source: "plain", secretId: "" });
+                  return;
+                }
+                const autoMatchedSecretId = row.secretId || findSecretIdByKeyName(row.key);
+                updateRow(i, { source: "secret", secretId: autoMatchedSecretId });
+              }}
             >
               <option value="plain">Plain</option>
               <option value="secret">Secret</option>
@@ -1287,6 +1345,11 @@ function EnvVarEditor({
                   onChange={(e) => updateRow(i, { secretId: e.target.value })}
                 >
                   <option value="">Select secret...</option>
+                  {row.secretId && !secrets.some((secret) => secret.id === row.secretId) ? (
+                    <option value={row.secretId}>
+                      {`Configured secret (${row.secretId.slice(0, 8)}...)`}
+                    </option>
+                  ) : null}
                   {secrets.map((secret) => (
                     <option key={secret.id} value={secret.id}>
                       {secret.name}
@@ -1353,6 +1416,7 @@ function ModelDropdown({
   allowDefault,
   required,
   groupByProvider,
+  allowAutoOption,
 }: {
   models: AdapterModel[];
   value: string;
@@ -1362,6 +1426,7 @@ function ModelDropdown({
   allowDefault: boolean;
   required: boolean;
   groupByProvider: boolean;
+  allowAutoOption: boolean;
 }) {
   const [modelSearch, setModelSearch] = useState("");
   const selected = models.find((m) => m.id === value);
@@ -1415,6 +1480,8 @@ function ModelDropdown({
             <span className={cn(!value && "text-muted-foreground")}>
               {selected
                 ? selected.label
+                : allowAutoOption && value === "auto"
+                  ? "Auto"
                 : value || (allowDefault ? "Default" : required ? "Select model (required)" : "Select model")}
             </span>
             <ChevronDown className="h-3 w-3 text-muted-foreground" />
@@ -1429,6 +1496,20 @@ function ModelDropdown({
             autoFocus
           />
           <div className="max-h-[240px] overflow-y-auto">
+            {allowAutoOption && (
+              <button
+                className={cn(
+                  "flex items-center gap-2 w-full px-2 py-1.5 text-sm rounded hover:bg-accent/50",
+                  value === "auto" && "bg-accent",
+                )}
+                onClick={() => {
+                  onChange("auto");
+                  onOpenChange(false);
+                }}
+              >
+                Auto
+              </button>
+            )}
             {allowDefault && (
               <button
                 className={cn(

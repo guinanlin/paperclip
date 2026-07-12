@@ -78,7 +78,7 @@ describe("cursor execute", () => {
         config: {
           command: commandPath,
           cwd: workspace,
-          model: "auto",
+          model: "",
           env: {
             PAPERCLIP_TEST_CAPTURE_PATH: capturePath,
           },
@@ -97,7 +97,8 @@ describe("cursor execute", () => {
 
       const capture = JSON.parse(await fs.readFile(capturePath, "utf8")) as CapturePayload;
       expect(capture.argv).not.toContain("Follow the paperclip heartbeat.");
-      expect(capture.argv).not.toContain("--model");
+      expect(capture.argv).toContain("--model");
+      expect(capture.argv).toContain("auto");
       expect(capture.argv).not.toContain("--mode");
       expect(capture.argv).not.toContain("ask");
       expect(capture.paperclipEnvKeys).toEqual(
@@ -169,7 +170,8 @@ describe("cursor execute", () => {
       expect(result.errorMessage).toBeNull();
 
       const capture = JSON.parse(await fs.readFile(capturePath, "utf8")) as CapturePayload;
-      expect(capture.argv).not.toContain("--model");
+      expect(capture.argv).toContain("--model");
+      expect(capture.argv).toContain("auto");
       expect(capture.argv).toContain("--mode");
       expect(capture.argv).toContain("ask");
     } finally {

@@ -57,6 +57,21 @@ export {
 } from "./agent-command-set.js";
 
 export {
+  androidPairStartSchema,
+  androidPairConfirmSchema,
+  androidPairPollSchema,
+  type AndroidPairStart,
+  type AndroidPairConfirm,
+  type AndroidPairPoll,
+} from "./agent-channel.js";
+
+export {
+  androidConnectionIdSchema,
+  parseAndroidConnectionIdRef,
+  type AndroidConnectionIdRef,
+} from "./android-connection-id.js";
+
+export {
   createProjectSchema,
   updateProjectSchema,
   createProjectWorkspaceSchema,

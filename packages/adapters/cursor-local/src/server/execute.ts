@@ -65,9 +65,10 @@ function normalizeMode(rawMode: string): "plan" | "ask" | null {
 
 function normalizeCursorModel(rawModel: string): string {
   const model = rawModel.trim();
-  if (!model) return "";
-  // Cursor CLI no longer accepts "--model auto"; omit the flag to use CLI default.
-  if (model.toLowerCase() === "auto") return "";
+  // Always pin Cursor runs to explicit Auto when model is empty,
+  // so runtime behavior is stable and doesn't depend on CLI defaults.
+  if (!model) return "auto";
+  if (model.toLowerCase() === "default") return "auto";
   return model;
 }
 
